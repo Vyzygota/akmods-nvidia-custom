@@ -28,4 +28,4 @@ jobs:
           context: .
           file: ./Containerfile
           push: true
-          tags: ghcr.io/${{ github.actor }}/akmods-nvidia-7.0:latest
+          tags: ghcr.io/vyzygota/akmods-nvidia-7.0:latest
