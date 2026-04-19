@@ -5,7 +5,7 @@ FROM fedora:rawhide AS builder
 RUN dnf install -y akmods rpm-build wget gcc-c++ make systemd-devel
 
 # 2. Włączenie repozytoriów RPMFusion (skąd weźmiemy źródła Nvidii)
-RUN dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
+RUN dnf install -y --nogpgcheck https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
 
 # 3. Pobranie Twojego konkretnego kernela (kernel-devel i headers są niezbędne do kompilacji!)
