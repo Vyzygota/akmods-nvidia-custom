@@ -4,9 +4,9 @@ FROM fedora:rawhide AS builder
 # 1. Instalacja podstawowych narzędzi do kompilacji
 RUN dnf install -y akmods rpm-build wget gcc-c++ make systemd-devel
 
-# 2. Włączenie repozytoriów RPMFusion z ominięciem blokady wersji (Fedora 45 vs 44)
-RUN rpm -i --nodeps https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
-                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
+# 2. Włączenie repozytoriów RPMFusion z ominięciem blokady wersji i kluczy
+RUN rpm -i --nodeps --nosignature https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
+                                  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
 
 # 3. Pobranie Twojego konkretnego kernela (kernel-devel i headers są niezbędne do kompilacji!)
 WORKDIR /tmp/kernel
