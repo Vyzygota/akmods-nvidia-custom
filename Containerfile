@@ -5,9 +5,9 @@ FROM fedora:rawhide AS builder
 RUN dnf install -y dnf5 && \
     dnf5 install -y akmods rpm-build gcc-c++ make systemd-devel findutils
 
-# 2. Włączenie repozytoriów RPMFusion Rawhide (omijamy sprawdzanie zależności wersji Fedory)
-RUN rpm -ivh --nodeps https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
-                      https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
+# 2. Włączenie repozytoriów RPMFusion Rawhide (omijamy sprawdzanie zależności i kluczy)
+RUN rpm -ivh --nodeps --nosignature https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
+                                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
 
 # 3. Instalacja Kernela, sterowników NVIDIA i Lenovo Legion Linux
 # Instalujemy akmod-nvidia (z RPMFusion) oraz akmod-lenovolegionlinux (z COPR)
