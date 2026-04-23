@@ -1,18 +1,18 @@
 FROM fedora:rawhide AS builder
 
-# 1. Narzędzia (dodajemy dkms dla Lenovo)
+# 1. Instalacja dnf5 i dkms (narzędzia bazowe)
 RUN dnf install -y dnf5 && \
     dnf5 install -y akmods rpm-build gcc-c++ make systemd-devel findutils dkms
 
-# 2. Repo RPMFusion (bez zmian)
-RUN rpm -ivh --nodeps --nosignature https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
-                                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
+# 2. Ręczne dopisanie repozytoriów (ZAMIAST instalacji RPM - to nas uodparnia na awarie mirrorów)
+RUN printf "[rpmfusion-free-rawhide]\nname=RPM Fusion Rawhide Free\nmetalink=https://mirrors.rpmfusion.org/metalink?repo=free-fedora-rawhide&arch=\$basearch\nenabled=1\ngpgcheck=0\n" > /etc/yum.repos.d/rpmfusion-free-rawhide.repo && \
+    printf "[rpmfusion-nonfree-rawhide]\nname=RPM Fusion Rawhide Nonfree\nmetalink=https://mirrors.rpmfusion.org/metalink?repo=nonfree-fedora-rawhide&arch=\$basearch\nenabled=1\ngpgcheck=0\n" > /etc/yum.repos.d/rpmfusion-nonfree-rawhide.repo
 
-# 3. Kernel i Sterowniki (dodajemy pełny komplet kernela, żeby akmods nie pyskował)
+# 3. Instalacja pełnego Kernela i Sterowników (Ważne: kernel-modules i kernel-core uciszą akmods)
 RUN dnf5 copr enable -y mrduarte/LenovoLegionLinux && \
-    dnf5 install -y kernel kernel-core kernel-modules kernel-devel akmod-nvidia dkms-LenovoLegionLinux
+    dnf5 install -y kernel kernel-core kernel-modules kernel-devel akmod-nvidia dkms dkms-LenovoLegionLinux
 
-# 4. Kompilacja (Nvidia leci automatem, Lenovo wyciągamy ręcznie)
+# 4. Kompilacja
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
     akmods --force --kernels "$KERNEL_VERSION" && \
     DKMS_FOLDER=$(ls /usr/src | grep -i lenovo | head -n 1) && \
