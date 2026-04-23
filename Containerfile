@@ -1,26 +1,30 @@
-# Używamy Fedory Rawhide, która ma najświeższe kernele
+# Używamy Fedory Rawhide dla najświeższych technologii
 FROM fedora:rawhide AS builder
 
-# 1. Instalacja podstawowych narzędzi do kompilacji
-RUN dnf install -y akmods rpm-build gcc-c++ make systemd-devel findutils
+# 1. Instalacja podstawowych narzędzi do kompilacji i obsługa dnf5
+RUN dnf install -y dnf5 && \
+    dnf5 install -y akmods rpm-build gcc-c++ make systemd-devel findutils
 
-# 2. Włączenie repozytoriów RPMFusion (skąd weźmiemy źródła Nvidii)
-RUN dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
-                   https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
+# 2. Włączenie repozytoriów RPMFusion Rawhide
+RUN dnf5 install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-rawhide.noarch.rpm \
+                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-rawhide.noarch.rpm
 
-# 3. Instalacja najnowszego kernela i paczki akmod-nvidia
-# DNF automatycznie pobierze najświeższe wersje z repozytorium Rawhide
-RUN dnf install -y kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra kernel-devel akmod-nvidia
+# 3. Instalacja Kernela, sterowników NVIDIA i Lenovo Legion Linux
+# Instalujemy akmod-nvidia (z RPMFusion) oraz akmod-lenovolegionlinux (z COPR)
+RUN dnf5 copr enable -y mrduarte/LenovoLegionLinux && \
+    dnf5 install -y kernel-devel akmod-nvidia akmod-lenovolegionlinux
 
-# 4. WŁAŚCIWA KOMPILACJA - dynamicznie wykrywamy wersję
-# Komenda rpm wyciąga dokładny numer wersji zainstalowanego pakietu kernel-devel
-# i podstawia go pod zmienną $KERNEL_VERSION, która trafia do akmods.
+# 4. KOMPILACJA MODUŁÓW
+# Wyciągamy wersję kernela i budujemy WSZYSTKIE zainstalowane akmody
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
-    echo "Kompiluję sterownik dla kernela: $KERNEL_VERSION" && \
-    akmods --force --kernels "$KERNEL_VERSION" --kmod nvidia
+    echo "Kompiluję moduły dla kernela: $KERNEL_VERSION" && \
+    akmods --force --kernels "$KERNEL_VERSION" && \
+    # Sprawdzamy, czy pliki .rpm powstały (dla pewności w logach)
+    find /var/cache/akmods/ -name "*.rpm"
 
 # --- ETAP 2: Wyciągnięcie gotowych RPM-ów ---
-# BlueBuild oczekuje, że obraz akmods będzie po prostu pustym "pudełkiem" (scratch)
-# zawierającym tylko i wyłącznie gotowe pakiety .rpm w folderze /rpms/
 FROM scratch
-COPY --from=builder /var/cache/akmods/nvidia/*.rpm /rpms/
+
+# Kopiujemy wszystkie skompilowane paczki (Nvidia i Lenovo) do folderu /rpms
+# Dzięki temu moduł 'copy' w Twoim głównym recipe.yml zabierze obie na raz
+COPY --from=builder /var/cache/akmods/*/*.rpm /rpms/
