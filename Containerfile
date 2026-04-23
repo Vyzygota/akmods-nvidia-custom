@@ -11,17 +11,19 @@ RUN rpm -ivh --nodeps --nosignature https://mirrors.rpmfusion.org/free/fedora/rp
 
 # 3. Instalacja Kernela, Nvidii oraz narzędzi DKMS dla Lenovo
 RUN dnf5 copr enable -y mrduarte/LenovoLegionLinux && \
-    dnf5 install -y kernel-devel akmod-nvidia dkms dkms-lenovolegionlinux
+    dnf5 install -y kernel-devel akmod-nvidia dkms dkms-LenovoLegionLinux
 
 # 4. KOMPILACJA MODUŁÓW (Nvidia przez akmods, Lenovo przez dkms)
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
     echo "Kompiluję moduł Nvidia dla kernela: $KERNEL_VERSION" && \
     akmods --force --kernels "$KERNEL_VERSION" && \
     echo "Kompiluję moduł Lenovo (DKMS)..." && \
-    DKMS_VER=$(ls /usr/src | grep lenovolegionlinux | sed 's/lenovolegionlinux-//') && \
-    dkms build -m lenovolegionlinux -v $DKMS_VER -k "$KERNEL_VERSION" && \
+    DKMS_FOLDER=$(ls /usr/src | grep -i lenovo | head -n 1) && \
+    DKMS_NAME=${DKMS_FOLDER%-*} && \
+    DKMS_VER=${DKMS_FOLDER#*-} && \
+    dkms build -m $DKMS_NAME -v $DKMS_VER -k "$KERNEL_VERSION" && \
     mkdir -p /rpms/kmods && \
-    find /var/lib/dkms/lenovolegionlinux/$DKMS_VER/$KERNEL_VERSION/ -name "*.ko" -exec cp {} /rpms/kmods/ \;
+    find /var/lib/dkms/$DKMS_NAME/$DKMS_VER/$KERNEL_VERSION/ -name "*.ko" -exec cp {} /rpms/kmods/ \;
 
 # --- ETAP 2: Wyciągnięcie gotowych plików ---
 FROM scratch
