@@ -19,8 +19,8 @@ jobs:
       - name: Wykrywanie Najnowszych Wersji 
         id: scrape
         run: |
-          # 1. Twardo ustawiona najnowsza stabilna wersja Fedory by uniknąć rate-limitów GitHub API (zwracających 'null')
-          FEDORA_VER="43"
+          # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
+          FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
           
           # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
