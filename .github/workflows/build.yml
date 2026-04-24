@@ -15,6 +15,7 @@ jobs:
     outputs:
       fedora: ${{ steps.scrape.outputs.fedora }}
       nvidia: ${{ steps.scrape.outputs.nvidia }}
+      linux: ${{ steps.scrape.outputs.linux }}
     steps:
       - name: Wykrywanie Najnowszych Wersji 
         id: scrape
@@ -56,3 +57,4 @@ jobs:
           build-args: |
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
+            LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
