@@ -9,7 +9,9 @@ WORKDIR /build
 RUN dnf install -y dnf5 && \
     # Aktywujemy repozytorium Vanilla, skąd pociągniemy najnowszą wersje jadra (zgodną z LINUX_VERSION ze spidera)
     dnf5 copr enable -y @kernel-vanilla/stable && \
-    dnf5 install -y wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel kernel-${LINUX_VERSION}* kernel-devel-${LINUX_VERSION}*
+    mkdir -p /rpms/kernel && \
+    dnf5 install -y --downloadonly --destdir=/rpms/kernel kernel-${LINUX_VERSION}* kernel-core-${LINUX_VERSION}* kernel-modules-${LINUX_VERSION}* kernel-modules-core-${LINUX_VERSION}* kernel-modules-extra-${LINUX_VERSION}* && \
+    dnf5 install -y /rpms/kernel/*.rpm wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel kernel-devel-${LINUX_VERSION}*
 
 # POBIERANIE WERSJI ZMIENNEJ ${NVIDIA_VERSION} WYKRYTEJ W NOCY
 RUN mkdir -p /rpms/nvidia && \
