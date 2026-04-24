@@ -3,6 +3,7 @@ on:
   schedule:
     - cron: "0 3 * * *" # Codziennie w nocy nasz system budzi się by znaleźć nowości
   workflow_dispatch:
+
 jobs:
   matrix-spider:
     name: Cyber-Pająk Zwiadowca
@@ -23,6 +24,7 @@ jobs:
           echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER"
           echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
           echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
+
   build:
     needs: matrix-spider
     uses: blue-build/github-actions/.github/workflows/build.yml@v1
