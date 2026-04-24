@@ -1,31 +1,34 @@
-name: Build Custom Akmods
+name: Pancernik-OS Build Pipeline
 on:
-  push:
-    branches: [ main ]
+  schedule:
+    - cron: "0 3 * * *" # Codziennie w nocy nasz system budzi się by znaleźć nowości
   workflow_dispatch:
-
 jobs:
-  build:
+  matrix-spider:
+    name: Cyber-Pająk Zwiadowca
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+    outputs:
+      fedora: ${{ steps.scrape.outputs.fedora }}
+      nvidia: ${{ steps.scrape.outputs.nvidia }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Containerfile
-          push: true
-          tags: ghcr.io/vyzygota/akmods-nvidia-7.0:latest
+      - name: Wykrywanie Najnowszych Wersji 
+        id: scrape
+        run: |
+          # 1. Scrapowanie najnowszego obrazu Fedory z Github API
+          FEDORA_VER=$(curl -sL "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/tags" | jq -r '.[0].name')
+          
+          # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
+          NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
+          
+          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER"
+          echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
+          echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
+  build:
+    needs: matrix-spider
+    uses: blue-build/github-actions/.github/workflows/build.yml@v1
+    with:
+      recipe: recipe.yml
+      # Dynamiczne wstrzykiwanie zmiennych jako ARG do Containerfile!
+      build_args: |
+        FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
+        NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
