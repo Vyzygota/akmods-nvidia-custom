@@ -4,6 +4,10 @@ on:
     - cron: "0 3 * * *" # Codziennie w nocy nasz system budzi się by znaleźć nowości
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   matrix-spider:
     name: Cyber-Pająk Zwiadowca
