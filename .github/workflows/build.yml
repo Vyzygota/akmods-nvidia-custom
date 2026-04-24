@@ -24,10 +24,14 @@ jobs:
           
           # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
+
+          # 3. Dynamiczne pobieranie najnowszej stabilnej wersji jądra Linux
+          LINUX_VER=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
           
-          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER"
+          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER"
           echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
           echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
+          echo "linux=$LINUX_VER" >> "$GITHUB_OUTPUT"
 
   build:
     needs: matrix-spider
