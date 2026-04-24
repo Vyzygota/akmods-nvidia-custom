@@ -3,11 +3,13 @@ FROM fedora:${FEDORA_VERSION} AS builder
 
 # Przyjmujemy dynamiczną wersję Nvidii ze skryptu GitHub Actions
 ARG NVIDIA_VERSION
+ARG LINUX_VERSION
 WORKDIR /build
 
 RUN dnf install -y dnf5 && \
-    # Kernel zawsze z repozytorium 'updates' (automatycznie najświeższy dla danej Fedory)
-    dnf5 install -y wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel kernel kernel-devel
+    # Aktywujemy repozytorium Vanilla, skąd pociągniemy najnowszą wersje jadra (zgodną z LINUX_VERSION ze spidera)
+    dnf5 copr enable -y @kernel-vanilla/stable && \
+    dnf5 install -y wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel kernel-${LINUX_VERSION}* kernel-devel-${LINUX_VERSION}*
 
 # POBIERANIE WERSJI ZMIENNEJ ${NVIDIA_VERSION} WYKRYTEJ W NOCY
 RUN mkdir -p /rpms/nvidia && \
