@@ -20,7 +20,7 @@ jobs:
         id: scrape
         run: |
           # 1. Twardo ustawiona najnowsza stabilna wersja Fedory by uniknąć rate-limitów GitHub API (zwracających 'null')
-          FEDORA_VER="41"
+          FEDORA_VER="43"
           
           # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
