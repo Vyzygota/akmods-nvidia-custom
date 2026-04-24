@@ -15,8 +15,8 @@ jobs:
       - name: Wykrywanie Najnowszych Wersji 
         id: scrape
         run: |
-          # 1. Scrapowanie najnowszego obrazu Fedory z Github API
-          FEDORA_VER=$(curl -sL "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/tags" | jq -r '.[0].name')
+          # 1. Twardo ustawiona najnowsza stabilna wersja Fedory by uniknąć rate-limitów GitHub API (zwracających 'null')
+          FEDORA_VER="41"
           
           # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
