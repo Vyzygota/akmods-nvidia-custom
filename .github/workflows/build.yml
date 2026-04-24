@@ -43,7 +43,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/akmods-nvidia-custom:latest
+          tags: ghcr.io/vyzygota/akmods-nvidia-custom:latest
           build-args: |
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
