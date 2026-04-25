@@ -35,7 +35,7 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
     wget https://github.com/johnfanv2/LenovoLegionLinux/archive/refs/heads/main.tar.gz -O lenovo.tar.gz && \
     tar -xf lenovo.tar.gz && \
     cd LenovoLegionLinux-main/kernel_module && \
-    make KDIR=/usr/src/kernels/${KERNEL_VERSION} && \
+    make -C /usr/src/kernels/${KERNEL_VERSION} M=$(pwd) modules && \
     cp *.ko /rpms/kmods/
 
 # Tworzymy fałszywy (dummy) RPM, który zablokuje Bazzite od narzekania na brak pakietów Nvidii
