@@ -30,7 +30,7 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
 
 # Tworzymy fałszywy (dummy) RPM, który zablokuje Bazzite od narzekania na brak pakietów Nvidii
 RUN echo "Name: kernel-nvidia" > /build/dummy.spec && \
-    echo "Version: 6.17.7" >> /build/dummy.spec && \
+    echo "Version: 99.99.99" >> /build/dummy.spec && \
     echo "Release: 1%{?dist}" >> /build/dummy.spec && \
     echo "Epoch: 3" >> /build/dummy.spec && \
     echo "Summary: Dummy package for kernel-nvidia" >> /build/dummy.spec && \
@@ -42,7 +42,7 @@ RUN echo "Name: kernel-nvidia" > /build/dummy.spec && \
     echo "%files" >> /build/dummy.spec && \
     rpmbuild -ba /build/dummy.spec && \
     mkdir -p /rpms/dummy && \
-    cp /root/rpmbuild/RPMS/noarch/*.rpm /rpms/dummy/
+    cp /root/rpmbuild/RPMS/*/*.rpm /rpms/dummy/
 
 FROM scratch
 COPY --from=builder /rpms/ /rpms/
