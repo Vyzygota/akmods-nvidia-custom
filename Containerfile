@@ -18,12 +18,15 @@ RUN mkdir -p /rpms/nvidia && \
     wget https://us.download.nvidia.com/XFree86/Linux-x86_64/${NVIDIA_VERSION}/NVIDIA-Linux-x86_64-${NVIDIA_VERSION}.run -O /build/nvidia.run && \
     chmod +x /build/nvidia.run
 
-# Uruchamiamy instalator NVIDIA z flagami wymuszającymi samą kompilację przez DKMS
+# Uruchamiamy instalator NVIDIA i kompilujemy same moduły jądra
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
     echo "Kuję Pancerz Ochronny modułów NVIDII v${NVIDIA_VERSION} do super-kernela v${KERNEL_VERSION}..." && \
-    /build/nvidia.run --silent --dkms --kernel-source-path=/usr/src/kernels/${KERNEL_VERSION} --kernel-name=${KERNEL_VERSION} --kernel-module-only && \
+    cd /build && \
+    ./nvidia.run --extract-only && \
+    cd NVIDIA-Linux-x86_64-${NVIDIA_VERSION}/kernel && \
+    make IGNORE_CC_MISMATCH=1 SYSSRC=/usr/src/kernels/${KERNEL_VERSION} SYSOUT=/usr/src/kernels/${KERNEL_VERSION} modules && \
     mkdir -p /rpms/kmods && \
-    find /var/lib/dkms/ -name "*.ko" -exec cp {} /rpms/kmods/ \;
+    cp *.ko /rpms/kmods/
 
 FROM scratch
 COPY --from=builder /rpms/ /rpms/
