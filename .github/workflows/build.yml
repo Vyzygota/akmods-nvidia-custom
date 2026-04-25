@@ -1,60 +1,35 @@
-name: akmods-nvidia-custom Builder
-on:
-  schedule:
-    - cron: "0 3 * * *" # Codziennie w nocy nasz system budzi się by znaleźć nowości
-  workflow_dispatch:
+name: moj-bazzite
+description: Mój Bazzite Deck - ciągle aktualny system ze zbudowaną Nvidią i agentem AI
+base-image: ghcr.io/ublue-os/bazzite-deck-nvidia
+# Bazzite Deck pobierany w wersji absolutnie najświeższej z dnia budowania
+image-version: latest
 
-permissions:
-  contents: read
-  packages: write
+modules:
+  - type: copy
+    from: ghcr.io/vyzygota/akmods-nvidia-custom:latest
+    src: /rpms
+    dest: /tmp/custom-rpms
 
-jobs:
-  matrix-spider:
-    name: Cyber-Pająk Zwiadowca
-    runs-on: ubuntu-latest
-    outputs:
-      fedora: ${{ steps.scrape.outputs.fedora }}
-      nvidia: ${{ steps.scrape.outputs.nvidia }}
-      linux: ${{ steps.scrape.outputs.linux }}
-    steps:
-      - name: Wykrywanie Najnowszych Wersji 
-        id: scrape
-        run: |
-          # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
-          FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
-          
-          # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
-          NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
-
-          # 3. Dynamiczne pobieranie najnowszej stabilnej wersji jądra Linux
-          LINUX_VER=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
-          
-          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER"
-          echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
-          echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
-          echo "linux=$LINUX_VER" >> "$GITHUB_OUTPUT"
-
-  build:
-    needs: matrix-spider
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Build and Push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Containerfile
-          push: true
-          tags: ghcr.io/vyzygota/akmods-nvidia-custom:latest
-          build-args: |
-            FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
-            NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
-            LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
+  - type: script
+    snippets:
+      - |
+        echo "=========================================================="
+        echo "1. Wstrzykiwanie Rdzenia: Najnowszy Linux Kernel + NVIDIA"
+        echo "=========================================================="
+        # Pobieramy wersje starego kernela, by wyciac go bez sladu
+        OLD_KERNEL=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-core | head -n 1)
+        echo "Wykryto stary kernel bazowy: $OLD_KERNEL"
+        
+        echo "Zastepuje bazowy kernel Bazzite wersja Vanilla z ktorej kompilowalismy moduly..."
+        rpm-ostree override replace /tmp/custom-rpms/kernel/*.rpm
+        
+        echo "Calkowite usuniecie poprzedniego kernela ($OLD_KERNEL) zeby nie bylo po nim sladu..."
+        rm -rf /usr/lib/modules/$OLD_KERNEL
+        
+        # Pobieramy wersje *nowego* kernela, ktory przed chwila zainstalowalusmy w ostree
+        NEW_KERNEL=$(rpm -qp --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" /tmp/custom-rpms/kernel/kernel-core-*.rpm | head -n 1)
+        
+        echo "Wstrzykiwanie wlasnych modulow (*.ko) do kernela: $NEW_KERNEL"
+        mkdir -p /usr/lib/modules/$NEW_KERNEL/extra/custom
+        cp /tmp/custom-rpms/kmods/*.ko /usr/lib/modules/$NEW_KERNEL/extra/custom/
+        depmod -a $NEW_KERNEL
