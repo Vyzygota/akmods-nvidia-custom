@@ -1,7 +1,8 @@
 name: akmods-nvidia-custom Builder
+
 on:
   schedule:
-    - cron: "0 3 * * *" # Codziennie w nocy nasz system budzi się by znaleźć nowości
+    - cron: "0 3 * * *" # Codziennie w nocy o 03:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,7 @@ jobs:
       nvidia: ${{ steps.scrape.outputs.nvidia }}
       linux: ${{ steps.scrape.outputs.linux }}
     steps:
-      - name: Wykrywanie Najnowszych Wersji 
+      - name: Wykrywanie Najnowszych Wersji
         id: scrape
         run: |
           # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
@@ -35,19 +36,21 @@ jobs:
           echo "linux=$LINUX_VER" >> "$GITHUB_OUTPUT"
 
   build:
+    name: Fabryka "All Latest"
     needs: matrix-spider
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
       
-      - name: Log in to GHCR
+      - name: Logowanie do GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Build and Push
+      - name: Budowanie i Wypychanie Obrazu
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -59,9 +62,15 @@ jobs:
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
             LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
 
-- name: Powiadom o pożarze w fabryce "All Latest"
-        if: failure() # Ten krok wykona się TYLKO, gdy kompilacja obrazu padnie
+      - name: Powiadom o pożarze w fabryce "All Latest"
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          curl -H "Content-Type: application/json" \
-          -d '{"content": "🚨 **ALARM!** Cyber-Pająk melduje: Kompilacja All Latest (Kernel ${{ needs.matrix-spider.outputs.linux }} + NVIDIA ${{ needs.matrix-spider.outputs.nvidia }}) właśnie eksplodowała! Pancerz ochronny nie wytrzymał. Wymagana interwencja twórcy!"}' \
-          https://discord.gg/pCm5PnRCv
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            curl -H "Content-Type: application/json" \
+            -d "{\"content\": \"🚨 **ALARM!** Cyber-Pająk melduje: Kompilacja All Latest (Kernel ${{ needs.matrix-spider.outputs.linux }} + NVIDIA ${{ needs.matrix-spider.outputs.nvidia }}) właśnie eksplodowała! Pancerz ochronny nie wytrzymał. Wymagana interwencja twórcy!\"}" \
+            $DISCORD_WEBHOOK
+          else
+            echo "Kompilacja zakończona błędem, ale brak skonfigurowanego webhooka w zakładce Secrets."
+          fi
