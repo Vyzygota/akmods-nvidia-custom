@@ -58,3 +58,10 @@ jobs:
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
             LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
+
+- name: Powiadom o pożarze w fabryce "All Latest"
+        if: failure() # Ten krok wykona się TYLKO, gdy kompilacja obrazu padnie
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "🚨 **ALARM!** Cyber-Pająk melduje: Kompilacja All Latest (Kernel ${{ needs.matrix-spider.outputs.linux }} + NVIDIA ${{ needs.matrix-spider.outputs.nvidia }}) właśnie eksplodowała! Pancerz ochronny nie wytrzymał. Wymagana interwencja twórcy!"}' \
+          https://discord.gg/pCm5PnRCv
