@@ -24,7 +24,7 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
     cd /build && \
     ./nvidia.run --extract-only && \
     cd NVIDIA-Linux-x86_64-${NVIDIA_VERSION}/kernel && \
-    make IGNORE_CC_MISMATCH=1 SYSSRC=/usr/src/kernels/${KERNEL_VERSION} SYSOUT=/usr/src/kernels/${KERNEL_VERSION} modules && \
+    make IGNORE_CC_MISMATCH=1 OBJTOOL=true SYSSRC=/usr/src/kernels/${KERNEL_VERSION} SYSOUT=/usr/src/kernels/${KERNEL_VERSION} modules && \
     mkdir -p /rpms/kmods && \
     cp *.ko /rpms/kmods/
 
