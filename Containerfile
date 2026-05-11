@@ -8,17 +8,20 @@ WORKDIR /build
 
 # 1. Instalacja DNF5 i bazy narzędziowej
 RUN dnf install -y dnf5 && \
-    dnf5 copr enable -y @kernel-vanilla/stable && \
+    dnf5 copr enable -y @kernel-vanilla/fedora && \
     mkdir -p /rpms/kernel && \
     # Pobieranie konkretnych wersji jądra wybiórczo pająkiem
     dnf5 download --destdir=/rpms/kernel \
         kernel-${LINUX_VERSION}* \
         kernel-core-${LINUX_VERSION}* \
+        kernel-devel-${LINUX_VERSION}* \
         kernel-modules-${LINUX_VERSION}* \
         kernel-modules-core-${LINUX_VERSION}* \
         kernel-modules-extra-${LINUX_VERSION}* && \
+    # Usunięcie domyślnego jądra Fedory, aby uniknąć konfliktów i mieć "czysty" build
+    dnf5 remove -y kernel kernel-core kernel-modules kernel-devel && \
     # Instalacja pobranych pakietów oraz narzędzi kompilacji
-    dnf5 install -y /rpms/kernel/*.rpm wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel kernel-devel-${LINUX_VERSION}*
+    dnf5 install -y /rpms/kernel/*.rpm wget rpm-build make gcc gcc-c++ dkms findutils systemd-devel
 
 # 2. Pobieranie sterownika NVIDIA (.run)
 RUN mkdir -p /rpms/nvidia && \
