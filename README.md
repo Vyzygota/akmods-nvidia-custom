@@ -9,7 +9,7 @@ Automatyczna "Fabryka" najnowszego uzbrojenia dla systemów Fedora Atomic (Bazzi
 
 Ten projekt nie uznaje kompromisów. Zawsze celujemy w najnowsze stabilne wersje:
 *   **Fedora**: Najwyższa dostępna wersja (obecnie Fedora 44).
-*   **Linux Kernel**: Najnowszy stabilny kernel z projektu `@kernel-vanilla/fedora` (obecnie 7.0.6+).
+*   **Linux Kernel**: Absolutnie najnowsza wersja prosto z `kernel.org`. Śledzimy wydania Linusa Torvaldsa (Mainline/RC) oraz najnowsze wydania stabilne (Stable), wykorzystując repozytoria `@kernel-vanilla` jako źródło paczek.
 *   **NVIDIA Drivers**: Najnowsze sterowniki `.run` prosto od producenta (seria 595.x+).
 
 ## 🛠️ Co znajduje się wewnątrz?

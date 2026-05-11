@@ -8,6 +8,7 @@ WORKDIR /build
 
 # 1. Instalacja DNF5 i bazy narzędziowej
 RUN dnf install -y dnf5 && \
+    dnf5 copr enable -y @kernel-vanilla/mainline && \
     dnf5 copr enable -y @kernel-vanilla/fedora && \
     mkdir -p /rpms/kernel && \
     # Pobieranie konkretnych wersji jądra wybiórczo pająkiem
