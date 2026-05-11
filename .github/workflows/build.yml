@@ -1,6 +1,9 @@
 name: akmods-nvidia-custom Builder
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: "0 3 * * *" # Codziennie w nocy o 03:00 UTC
   workflow_dispatch:
