@@ -8,7 +8,6 @@ WORKDIR /build
 
 # 1. Instalacja DNF5 i bazy narzędziowej
 RUN dnf install -y dnf5 && \
-    dnf5 copr enable -y @kernel-vanilla/mainline && \
     dnf5 copr enable -y @kernel-vanilla/fedora && \
     mkdir -p /rpms/kernel && \
     # Pobieranie konkretnych wersji jądra wybiórczo pająkiem
@@ -30,7 +29,7 @@ RUN mkdir -p /rpms/nvidia && \
     chmod +x /build/nvidia.run
 
 # 3. Kompilacja modułów jądra NVIDIA z "Wytrychem" na Kernel 7.0+ i GCC 16
-RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
+RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | grep "${LINUX_VERSION}" | head -n 1) && \
     echo "Kuję Pancerz Ochronny modułów NVIDII v${NVIDIA_VERSION} dla jądra ${KERNEL_VERSION}..." && \
     ./nvidia.run --extract-only && \
     cd NVIDIA-Linux-x86_64-${NVIDIA_VERSION}/kernel && \
@@ -41,7 +40,7 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
         OBJTOOL=true \
         SYSSRC=/usr/src/kernels/${KERNEL_VERSION} \
         SYSOUT=/usr/src/kernels/${KERNEL_VERSION} \
-        NV_EXTRA_CFLAGS="-Wno-error -Wno-expansion-to-defined -Wno-implicit-function-declaration" \
+        NV_EXTRA_CFLAGS="-Wno-error -Wno-expansion-to-defined -Wno-implicit-function-declaration -Wno-incompatible-pointer-types -Wno-unused-function" \
         modules && \
     mkdir -p /rpms/kmods && \
     cp *.ko /rpms/kmods/
