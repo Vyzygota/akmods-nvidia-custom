@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -20,27 +20,45 @@ jobs:
       fedora: ${{ steps.scrape.outputs.fedora }}
       nvidia: ${{ steps.scrape.outputs.nvidia }}
       linux: ${{ steps.scrape.outputs.linux }}
+      changed: ${{ steps.compare.outputs.changed }}
     steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
       - name: Wykrywanie Najnowszych Wersji
         id: scrape
         run: |
           # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
           FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
-          
+
           # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
 
           # 3. Dynamiczne pobieranie najnowszej stabilnej wersji jądra Linux (STABLE)
           LINUX_VER=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
-          
+
           echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER"
           echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
           echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
           echo "linux=$LINUX_VER" >> "$GITHUB_OUTPUT"
 
+      - name: Sprawdź czy wersje się zmieniły
+        id: compare
+        run: |
+          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }}"
+          OLD=$(cat versions.lock 2>/dev/null || echo "")
+          if [ "$OLD" = "$NEW" ]; then
+            echo "Brak zmian wersji — pomijam build."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Wykryto zmiany: $OLD → $NEW"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: Fabryka "All Latest"
     needs: matrix-spider
+    if: needs.matrix-spider.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie repozytorium
@@ -64,6 +82,16 @@ jobs:
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
             LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
+
+      - name: Zaktualizuj versions.lock
+        if: success()
+        run: |
+          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }}" > versions.lock
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.lock
+          git commit -m "chore: update versions.lock [skip ci]"
+          git push
 
       - name: Uruchom BleedingEdgeBazzite
         if: success()
