@@ -1,45 +1,63 @@
-# 🕷️ akmods-nvidia-custom (Cyber-Pająk Edition)
+# akmods-nvidia-custom
 
 ![Build Status](https://github.com/Vyzygota/akmods-nvidia-custom/actions/workflows/build.yml/badge.svg)
-![Latest Release](https://img.shields.io/github/v/release/Vyzygota/akmods-nvidia-custom?color=neon&style=flat-square)
 
-Automatyczna "Fabryka" najnowszego uzbrojenia dla systemów Fedora Atomic (Bazzite, uBlue, Fedora Silverblue). Projekt ten wykorzystuje **Cyber-Pająka Zwiadowcę**, który codziennie przeszukuje sieć w poszukiwaniu najświeższych komponentów, aby dostarczyć gotowe moduły jądra zanim pojawią się w oficjalnych repozytoriach.
+Automated factory that compiles the latest stable Linux kernel and NVIDIA drivers into RPM packages, ready to be consumed by [BleedingEdgeBazzite](https://github.com/Vyzygota/BleedingEdgeBazzite).
 
-## 🚀 Założenia Projektu "All Latest"
+## What it builds
 
-Ten projekt nie uznaje kompromisów. Zawsze celujemy w najnowsze stabilne wersje:
-*   **Fedora**: Najwyższa dostępna wersja (obecnie Fedora 44).
-*   **Linux Kernel**: Najnowsza **stabilna** wersja (STABLE) prosto z `kernel.org`. Śledzimy oficjalne wydania stabilne, wykorzystując repozytoria `@kernel-vanilla` jako źródło paczek.
-*   **NVIDIA Drivers**: Najnowsze sterowniki `.run` prosto od producenta (seria 595.x+).
+| Component | Source | Notes |
+|-----------|--------|-------|
+| Linux kernel | kernel.org (latest stable) | Built from `@kernel-vanilla` COPR |
+| NVIDIA drivers | download.nvidia.com (latest) | Compiled from `.run` installer |
+| LenovoLegionLinux | upstream | Fan/power control for Lenovo Legion |
+| Dummy RPM | local | Satisfies Bazzite dependency checks |
 
-## 🛠️ Co znajduje się wewnątrz?
+## How it works
 
-1.  **NVIDIA Kmods**: Kompilacja modułów z autorskim "Wytrychem" (Lockpick), który pozwala na budowanie sterowników NVIDIA dla Kernela 7.0+ przy użyciu GCC 16, wyciszając restrykcje kompilatora i naprawiając błędy MITIGATION_RETHUNK.
-2.  **LenovoLegionLinux**: Najnowsze moduły sterownika dla laptopów Lenovo Legion, zintegrowane bezpośrednio z najnowszym jądrem.
-3.  **Dummy RPM (kernel-nvidia)**: Specjalna paczka oszukująca zależności systemowe Bazzite/uBlue, pozwalająca na używanie customowych modułów bez konfliktów z menedżerem pakietów.
+**Cyber-Spider** — the first job in the pipeline — scrapes three sources on every run:
 
-## 🏗️ Architektura
+- `kernel.org` for the latest stable kernel version
+- `download.nvidia.com` for the latest NVIDIA driver
+- `fedoraproject.org` for the latest Fedora release
 
-*   **Pajączek Zwiadowca**: Skrypt GitHub Actions, który dynamicznie scrapuje:
-    *   `kernel.org` (wersja jądra)
-    *   `download.nvidia.com` (wersja sterownika)
-    *   `fedoraproject.org` (wersja dystrybucji)
-*   **Container Builder**: Wykorzystuje `dnf5` i repozytoria Copr `@kernel-vanilla/fedora` do przygotowania czystego środowiska budowania (z usuwaniem domyślnych jąder Fedory w celu uniknięcia konfliktów).
-*   **Artifact Export**: Gotowe paczki `.rpm` oraz moduły `.ko` są wypychane do GitHub Container Registry (GHCR) jako warstwy obrazu `scratch`.
+It then compares the detected versions against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
 
-## 📦 Jak używać?
-
-Paczki są dostępne w obrazie:
-`ghcr.io/vyzygota/akmods-nvidia-custom:latest`
-
-Możesz je wyciągnąć za pomocą:
-```bash
-docker run --rm -v $(pwd)/rpms:/out ghcr.io/vyzygota/akmods-nvidia-custom:latest cp -r /rpms/. /out/
+```
+Cyber-Spider detects versions
+    └─► Compare with versions.lock
+            ├─► No changes → stop, nothing to do
+            └─► New version found → compile → push OCI → update lock → trigger BEB
 ```
 
-## ⚠️ Ostrzeżenie
+## Output
 
-To jest projekt "Bleeding Edge". Używasz go na własną odpowiedzialność. Jeśli Pajączek melduje o pożarze w fabryce, oznacza to, że nowe wersje GCC lub Kernela wprowadziły zmiany wymagające nowej wersji "Wytrycha".
+Packages are published as an OCI image:
+
+```
+ghcr.io/vyzygota/akmods-nvidia-custom:latest
+```
+
+Artifacts inside the image:
+
+```
+/rpms/kernel/   — kernel, kernel-core, kernel-modules RPMs
+/rpms/kmods/    — NVIDIA .ko module files
+/rpms/dummy/    — kernel-nvidia dummy RPM
+```
+
+## Consuming the packages
+
+```bash
+docker run --rm -v $(pwd)/rpms:/out \
+  ghcr.io/vyzygota/akmods-nvidia-custom:latest \
+  cp -r /rpms/. /out/
+```
+
+## Disclaimer
+
+This is a bleeding-edge project. New GCC or kernel releases occasionally break the build — that is expected. When the factory fails, Discord gets notified. If you rely on this image, watch the build badge above.
 
 ---
-*Created with ❤️ by Vyzygota & Cyber-Pająk*
+
+*Built by Vyzygota with [Claude Code](https://claude.ai/code) (Anthropic)*
