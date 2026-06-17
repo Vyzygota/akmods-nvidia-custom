@@ -111,12 +111,11 @@ jobs:
       - name: Uruchom BleedingEdgeBazzite
         if: success()
         run: |
-          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" -X POST \
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer ${{ secrets.BEB_DISPATCH_TOKEN }}" \
             https://api.github.com/repos/Vyzygota/BleedingEdgeBazzite/dispatches \
-            -d "{\"event_type\":\"akmods_updated\",\"client_payload\":{\"fedora_version\":\"${{ needs.matrix-spider.outputs.fedora }}\"}}" \
-            || echo "CURL_FAILED")
+            -d "{\"event_type\":\"akmods_updated\",\"client_payload\":{\"fedora_version\":\"${{ needs.matrix-spider.outputs.fedora }}\"}}")
           if [ "$HTTP_STATUS" = "204" ]; then
             echo "✅ BEB dispatch wysłany pomyślnie."
           else
