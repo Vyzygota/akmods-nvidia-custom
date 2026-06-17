@@ -29,7 +29,7 @@ jobs:
       linux_available: ${{ steps.scrape.outputs.linux_available }}
     steps:
       - name: Pobranie repozytorium
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Wykrywanie Najnowszych Wersji
         id: scrape
@@ -77,17 +77,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie repozytorium
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Logowanie do GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Budowanie i Wypychanie Obrazu
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
