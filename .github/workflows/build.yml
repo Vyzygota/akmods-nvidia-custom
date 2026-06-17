@@ -73,7 +73,7 @@ jobs:
   build:
     name: Fabryka "All Latest"
     needs: matrix-spider
-    if: needs.matrix-spider.outputs.changed == 'true'
+    if: needs.matrix-spider.outputs.changed == 'true' || github.event.inputs.force == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie repozytorium
