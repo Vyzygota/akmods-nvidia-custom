@@ -41,23 +41,15 @@ jobs:
           NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
 
           # 3. Najnowszy stable kernel dostępny dla aktualnej Fedory (z COPR kernel-vanilla/fedora)
-          # kernel.org zwraca latest_stable, ale COPR stable-fedora-releases buduje z opóźnieniem ~1-3 tygodnie.
-          # Pytamy COPR co faktycznie jest dostępne dla fc${FEDORA_VER} zamiast zgadywać.
+          # kernel.org podaje latest_stable, ale COPR stable-fedora-releases buduje z ~1-3 tygodniowym opóźnieniem.
+          # Pytamy COPR co faktycznie jest zbudowane dla fc${FEDORA_VER}.
           LINUX_VER_LATEST=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
           LINUX_VER_COPR=$(curl -s "https://copr.fedorainfracloud.org/api_3/build/list?ownername=@kernel-vanilla&projectname=fedora&status=succeeded&limit=30" \
-            | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for b in d.get('items',[]):
-    pkg = b.get('source_package',{})
-    chroots = b.get('chroots',[])
-    if pkg.get('name') == 'stable-fedora-releases' and any('fedora-${FEDORA_VER}-x86_64' in c for c in chroots):
-        print(pkg['version'].split('-')[0])
-        break
-" 2>/dev/null)
-          # Użyj wersji z COPR jeśli dostępna; wpadnie w kernel.org jak COPR ją wypuści
+            | jq -r --arg fc "fedora-${FEDORA_VER}-x86_64" \
+            '[.items[] | select(.source_package.name=="stable-fedora-releases") | select(.chroots[] | contains($fc))] | first | .source_package.version | split("-")[0]' \
+            2>/dev/null | grep -v null || true)
           LINUX_VER="${LINUX_VER_COPR:-$LINUX_VER_LATEST}"
-          echo "kernel.org latest: $LINUX_VER_LATEST | COPR f${FEDORA_VER} available: ${LINUX_VER_COPR:-nie znaleziono} | używam: $LINUX_VER"
+          echo "kernel.org latest: $LINUX_VER_LATEST | COPR f${FEDORA_VER}: ${LINUX_VER_COPR:-nie znaleziono} | używam: $LINUX_VER"
 
           echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER"
           echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
