@@ -27,18 +27,82 @@ jobs:
       linux: ${{ steps.scrape.outputs.linux }}
       changed: ${{ steps.compare.outputs.changed }}
       linux_available: ${{ steps.scrape.outputs.linux_available }}
+      bazzite: ${{ steps.scrape.outputs.bazzite }}
     steps:
       - name: Pobranie repozytorium
         uses: actions/checkout@v6
 
       - name: Wykrywanie Najnowszych Wersji
         id: scrape
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
-          FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
+          FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ \
+            | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
 
-          # 2. Scrapowanie Oficjalnego endpointu najnowszej NVIDII (.run)
-          NVIDIA_VER=$(curl -sL https://download.nvidia.com/XFree86/Linux-x86_64/latest.txt | awk '{print $1}')
+          # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
+          # Bazzite śledzi NVIDIA Open i adopuje w ~10 dni od wydania.
+          # Nie sprawdzamy nvidia.com ani GitHub NVIDIA — te mają równoległe gałęzie
+          # (595.x i 610.x) i nie wiadomo którą Bazzite będzie śledzić.
+          # Zamiast tego: czytamy etykietę obrazu Bazzite, pobieramy release notes,
+          # wyciągamy "Nvidia Open" → zawsze 100% zgodność kmod↔userspace.
+
+          echo "--- Wykrywanie wersji NVIDIA z Bazzite base image ---"
+
+          # Pobierz etykietę wersji obrazu przez GHCR API (bez skopeo, bez logowania)
+          BAZZITE_TOKEN=$(curl -sf \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:ublue-os/bazzite-deck-nvidia:pull" \
+            | jq -r '.token')
+
+          # Pobierz manifest (obsługa manifest list / multi-arch)
+          MANIFEST=$(curl -sf \
+            -H "Authorization: Bearer $BAZZITE_TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/manifests/unstable-${FEDORA_VER}")
+
+          # Jeśli to manifest list (multi-arch), weź digest dla amd64
+          if echo "$MANIFEST" | jq -e '.manifests' > /dev/null 2>&1; then
+            AMD64_DIGEST=$(echo "$MANIFEST" | jq -r \
+              '.manifests[] | select(.platform.architecture=="amd64" and .platform.os=="linux") | .digest' \
+              | head -1)
+            MANIFEST=$(curl -sf \
+              -H "Authorization: Bearer $BAZZITE_TOKEN" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+              "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/manifests/$AMD64_DIGEST")
+          fi
+
+          CONFIG_DIGEST=$(echo "$MANIFEST" | jq -r '.config.digest')
+          BAZZITE_IMG_LABEL=$(curl -sf \
+            -H "Authorization: Bearer $BAZZITE_TOKEN" \
+            "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/blobs/$CONFIG_DIGEST" \
+            | jq -r '.config.Labels["org.opencontainers.image.version"]')
+
+          # "unstable-44.20260605" → "44.20260605"
+          BAZZITE_VER="${BAZZITE_IMG_LABEL#unstable-}"
+          echo "Bazzite base image: $BAZZITE_IMG_LABEL (release tag: $BAZZITE_VER)"
+
+          # Pobierz wersję NVIDIA Open z release notes Bazzite
+          NVIDIA_VER=$(gh release view "${BAZZITE_VER}" --repo ublue-os/bazzite --json body \
+            -q '.body' 2>/dev/null \
+            | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
+
+          if [ -z "$NVIDIA_VER" ]; then
+            echo "Brak release Bazzite dla '${BAZZITE_VER}' — szukam w najnowszym stable release..."
+            LATEST_STABLE_TAG=$(gh release list --repo ublue-os/bazzite --limit 10 \
+              | grep -v "Pre-release\|testing" | grep "${FEDORA_VER}\." | head -1 | awk '{print $3}')
+            NVIDIA_VER=$(gh release view "${LATEST_STABLE_TAG}" --repo ublue-os/bazzite --json body \
+              -q '.body' 2>/dev/null \
+              | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
+            echo "Fallback do ${LATEST_STABLE_TAG} → NVIDIA ${NVIDIA_VER}"
+          fi
+
+          if [ -z "$NVIDIA_VER" ]; then
+            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji NVIDIA z Bazzite releases!"
+            exit 1
+          fi
+
+          echo "NVIDIA (z Bazzite): $NVIDIA_VER"
 
           # 3. Najnowszy stable kernel dostępny dla aktualnej Fedory (z COPR kernel-vanilla/fedora)
           # kernel.org podaje latest_stable, ale COPR stable-fedora-releases buduje z ~1-3 tygodniowym opóźnieniem.
@@ -51,16 +115,17 @@ jobs:
           LINUX_VER="${LINUX_VER_COPR:-$LINUX_VER_LATEST}"
           echo "kernel.org latest: $LINUX_VER_LATEST | COPR f${FEDORA_VER}: ${LINUX_VER_COPR:-nie znaleziono} | używam: $LINUX_VER"
 
-          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER"
-          echo "fedora=$FEDORA_VER" >> "$GITHUB_OUTPUT"
-          echo "nvidia=$NVIDIA_VER" >> "$GITHUB_OUTPUT"
-          echo "linux=$LINUX_VER" >> "$GITHUB_OUTPUT"
+          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER, Bazzite=$BAZZITE_VER"
+          echo "fedora=$FEDORA_VER"    >> "$GITHUB_OUTPUT"
+          echo "nvidia=$NVIDIA_VER"   >> "$GITHUB_OUTPUT"
+          echo "linux=$LINUX_VER"     >> "$GITHUB_OUTPUT"
           echo "linux_available=${LINUX_VER_COPR:-nie}" >> "$GITHUB_OUTPUT"
+          echo "bazzite=$BAZZITE_VER" >> "$GITHUB_OUTPUT"
 
       - name: Sprawdź czy wersje się zmieniły
         id: compare
         run: |
-          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }}"
+          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }}"
           OLD=$(cat versions.lock 2>/dev/null || echo "")
           if [ "$OLD" = "$NEW" ]; then
             echo "Brak zmian wersji — pomijam build."
@@ -78,14 +143,14 @@ jobs:
     steps:
       - name: Pobranie repozytorium
         uses: actions/checkout@v6
-      
+
       - name: Logowanie do GHCR
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Budowanie i Wypychanie Obrazu
         uses: docker/build-push-action@v7
         with:
@@ -101,7 +166,7 @@ jobs:
       - name: Zaktualizuj versions.lock
         if: success()
         run: |
-          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }}" > versions.lock
+          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }}" > versions.lock
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
