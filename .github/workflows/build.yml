@@ -50,33 +50,11 @@ jobs:
 
           echo "--- Wykrywanie wersji NVIDIA z Bazzite base image ---"
 
-          # Pobierz etykietę wersji obrazu przez GHCR API (bez skopeo, bez logowania)
-          BAZZITE_TOKEN=$(curl -sf \
-            "https://ghcr.io/token?service=ghcr.io&scope=repository:ublue-os/bazzite-deck-nvidia:pull" \
-            | jq -r '.token')
-
-          # Pobierz manifest (obsługa manifest list / multi-arch)
-          MANIFEST=$(curl -sf \
-            -H "Authorization: Bearer $BAZZITE_TOKEN" \
-            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
-            "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/manifests/unstable-${FEDORA_VER}")
-
-          # Jeśli to manifest list (multi-arch), weź digest dla amd64
-          if echo "$MANIFEST" | jq -e '.manifests' > /dev/null 2>&1; then
-            AMD64_DIGEST=$(echo "$MANIFEST" | jq -r \
-              '.manifests[] | select(.platform.architecture=="amd64" and .platform.os=="linux") | .digest' \
-              | head -1)
-            MANIFEST=$(curl -sf \
-              -H "Authorization: Bearer $BAZZITE_TOKEN" \
-              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-              "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/manifests/$AMD64_DIGEST")
-          fi
-
-          CONFIG_DIGEST=$(echo "$MANIFEST" | jq -r '.config.digest')
-          BAZZITE_IMG_LABEL=$(curl -sf \
-            -H "Authorization: Bearer $BAZZITE_TOKEN" \
-            "https://ghcr.io/v2/ublue-os/bazzite-deck-nvidia/blobs/$CONFIG_DIGEST" \
-            | jq -r '.config.Labels["org.opencontainers.image.version"]')
+          # Pobierz etykietę wersji obrazu przez skopeo (publiczny image, bez uwierzytelniania)
+          sudo apt-get install -y skopeo -q 2>&1 | tail -1
+          BAZZITE_IMG_LABEL=$(skopeo inspect --no-creds \
+            docker://ghcr.io/ublue-os/bazzite-deck-nvidia:unstable-${FEDORA_VER} \
+            | jq -r '.Labels["org.opencontainers.image.version"]')
 
           # "unstable-44.20260605" → "44.20260605"
           BAZZITE_VER="${BAZZITE_IMG_LABEL#unstable-}"
@@ -171,6 +149,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
           git commit -m "chore: update versions.lock [skip ci]"
+          git pull --rebase origin main
           git push
 
       - name: Uruchom BleedingEdgeBazzite
