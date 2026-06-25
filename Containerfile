@@ -4,6 +4,7 @@ FROM fedora:${FEDORA_VERSION} AS builder
 # Przyjmujemy dynamiczne wersje przekazane z GitHub Actions
 ARG NVIDIA_VERSION
 ARG LINUX_VERSION
+ARG EVDI_VERSION
 WORKDIR /build
 
 # 1. Instalacja DNF5 i bazy narzędziowej
@@ -53,6 +54,15 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
     cd LenovoLegionLinux-main/kernel_module && \
     make -j$(nproc) -C /usr/src/kernels/${KERNEL_VERSION} M=$(pwd) modules && \
     cp *.ko /rpms/kmods/
+
+# 4b. Kompilacja modułu evdi (DisplayLink — wymagany przez Viture Beast XR)
+RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
+    echo "Kompilacja evdi v${EVDI_VERSION} dla jądra ${KERNEL_VERSION}..." && \
+    wget https://github.com/DisplayLink/evdi/archive/refs/tags/v${EVDI_VERSION}.tar.gz -O evdi.tar.gz && \
+    tar -xf evdi.tar.gz && \
+    cd evdi-${EVDI_VERSION}/module && \
+    make -j$(nproc) -C /usr/src/kernels/${KERNEL_VERSION} M=$(pwd) modules && \
+    cp evdi.ko /rpms/kmods/
 
 # 5. Tworzenie Dummy RPM dla oszukania zależności Bazzite/uBlue
 RUN echo "Name: kernel-nvidia" > /build/dummy.spec && \

@@ -28,6 +28,7 @@ jobs:
       changed: ${{ steps.compare.outputs.changed }}
       linux_available: ${{ steps.scrape.outputs.linux_available }}
       bazzite: ${{ steps.scrape.outputs.bazzite }}
+      evdi: ${{ steps.scrape.outputs.evdi }}
     steps:
       - name: Pobranie repozytorium
         uses: actions/checkout@v6
@@ -93,17 +94,26 @@ jobs:
           LINUX_VER="${LINUX_VER_COPR:-$LINUX_VER_LATEST}"
           echo "kernel.org latest: $LINUX_VER_LATEST | COPR f${FEDORA_VER}: ${LINUX_VER_COPR:-nie znaleziono} | używam: $LINUX_VER"
 
-          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER, Bazzite=$BAZZITE_VER"
+          # 4. evdi (DisplayLink — wymagany przez Viture Beast XR) — najnowszy stable release
+          EVDI_VER=$(gh api repos/DisplayLink/evdi/releases/latest --jq '.tag_name' | sed 's/^v//')
+          if [ -z "$EVDI_VER" ]; then
+            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji evdi z GitHub!"
+            exit 1
+          fi
+          echo "evdi (DisplayLink): $EVDI_VER"
+
+          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER, Bazzite=$BAZZITE_VER, evdi=$EVDI_VER"
           echo "fedora=$FEDORA_VER"    >> "$GITHUB_OUTPUT"
           echo "nvidia=$NVIDIA_VER"   >> "$GITHUB_OUTPUT"
           echo "linux=$LINUX_VER"     >> "$GITHUB_OUTPUT"
           echo "linux_available=${LINUX_VER_COPR:-nie}" >> "$GITHUB_OUTPUT"
           echo "bazzite=$BAZZITE_VER" >> "$GITHUB_OUTPUT"
+          echo "evdi=$EVDI_VER"       >> "$GITHUB_OUTPUT"
 
       - name: Sprawdź czy wersje się zmieniły
         id: compare
         run: |
-          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }}"
+          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }} evdi=${{ steps.scrape.outputs.evdi }}"
           OLD=$(cat versions.lock 2>/dev/null || echo "")
           if [ "$OLD" = "$NEW" ]; then
             echo "Brak zmian wersji — pomijam build."
@@ -140,11 +150,12 @@ jobs:
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
             LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
+            EVDI_VERSION=${{ needs.matrix-spider.outputs.evdi }}
 
       - name: Zaktualizuj versions.lock
         if: success()
         run: |
-          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }}" > versions.lock
+          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }} evdi=${{ needs.matrix-spider.outputs.evdi }}" > versions.lock
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
