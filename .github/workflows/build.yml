@@ -43,25 +43,16 @@ jobs:
             | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
 
           # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
-          # Bazzite śledzi NVIDIA Open i adopuje w ~10 dni od wydania.
-          # Nie sprawdzamy nvidia.com ani GitHub NVIDIA — te mają równoległe gałęzie
-          # (595.x i 610.x) i nie wiadomo którą Bazzite będzie śledzić.
-          # Zamiast tego: czytamy etykietę obrazu Bazzite, pobieramy release notes,
-          # wyciągamy "Nvidia Open" → zawsze 100% zgodność kmod↔userspace.
-
           echo "--- Wykrywanie wersji NVIDIA z Bazzite base image ---"
 
-          # Pobierz etykietę wersji obrazu przez skopeo (publiczny image, bez uwierzytelniania)
           sudo apt-get install -y skopeo -q 2>&1 | tail -1
           BAZZITE_IMG_LABEL=$(skopeo inspect --no-creds \
             docker://ghcr.io/ublue-os/bazzite-deck-nvidia:unstable-${FEDORA_VER} \
             | jq -r '.Labels["org.opencontainers.image.version"]')
 
-          # "unstable-44.20260605" → "44.20260605"
           BAZZITE_VER="${BAZZITE_IMG_LABEL#unstable-}"
           echo "Bazzite base image: $BAZZITE_IMG_LABEL (release tag: $BAZZITE_VER)"
 
-          # Pobierz wersję NVIDIA Open z release notes Bazzite
           NVIDIA_VER=$(gh release view "${BAZZITE_VER}" --repo ublue-os/bazzite --json body \
             -q '.body' 2>/dev/null \
             | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
@@ -84,8 +75,6 @@ jobs:
           echo "NVIDIA (z Bazzite): $NVIDIA_VER"
 
           # 3. Najnowszy stable kernel dostępny dla aktualnej Fedory (z COPR kernel-vanilla/fedora)
-          # kernel.org podaje latest_stable, ale COPR stable-fedora-releases buduje z ~1-3 tygodniowym opóźnieniem.
-          # Pytamy COPR co faktycznie jest zbudowane dla fc${FEDORA_VER}.
           LINUX_VER_LATEST=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
           LINUX_VER_COPR=$(curl -s "https://copr.fedorainfracloud.org/api_3/build/list?ownername=@kernel-vanilla&projectname=fedora&status=succeeded&limit=30" \
             | jq -r --arg fc "fedora-${FEDORA_VER}-x86_64" \
