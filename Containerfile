@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 ARG FEDORA_VERSION=latest
 FROM fedora:${FEDORA_VERSION} AS builder
 
