@@ -45,26 +45,32 @@ jobs:
           # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
           echo "--- Wykrywanie wersji NVIDIA z Bazzite base image ---"
 
-          sudo apt-get install -y skopeo -q 2>&1 | tail -1
+          # skopeo bywa już zainstalowany na runnerze — doinstaluj tylko gdy go brak
+          command -v skopeo >/dev/null || sudo apt-get install -y -q skopeo 2>&1 | tail -1
           BAZZITE_IMG_LABEL=$(skopeo inspect --no-creds \
             docker://ghcr.io/ublue-os/bazzite-deck-nvidia:unstable-${FEDORA_VER} \
             | jq -r '.Labels["org.opencontainers.image.version"]')
 
+          # Tag releasu w ublue-os/bazzite to pełna etykieta obrazu (np. "unstable-44.20260917");
+          # do versions.lock trafia sam numer bez prefiksu (np. "44.20260917").
+          BAZZITE_TAG="$BAZZITE_IMG_LABEL"
           BAZZITE_VER="${BAZZITE_IMG_LABEL#unstable-}"
-          echo "Bazzite base image: $BAZZITE_IMG_LABEL (release tag: $BAZZITE_VER)"
+          echo "Bazzite base image: $BAZZITE_IMG_LABEL (release tag: $BAZZITE_TAG, wersja: $BAZZITE_VER)"
 
-          NVIDIA_VER=$(gh release view "${BAZZITE_VER}" --repo ublue-os/bazzite --json body \
+          NVIDIA_VER=$(gh release view "${BAZZITE_TAG}" --repo ublue-os/bazzite --json body \
             -q '.body' 2>/dev/null \
             | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
 
           if [ -z "$NVIDIA_VER" ]; then
-            echo "Brak release Bazzite dla '${BAZZITE_VER}' — szukam w najnowszym stable release..."
-            LATEST_STABLE_TAG=$(gh release list --repo ublue-os/bazzite --limit 10 \
-              | grep -v "Pre-release\|testing" | grep "${FEDORA_VER}\." | head -1 | awk '{print $3}')
-            NVIDIA_VER=$(gh release view "${LATEST_STABLE_TAG}" --repo ublue-os/bazzite --json body \
-              -q '.body' 2>/dev/null \
-              | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
-            echo "Fallback do ${LATEST_STABLE_TAG} → NVIDIA ${NVIDIA_VER}"
+            echo "Brak release Bazzite dla '${BAZZITE_TAG}' — szukam w najnowszym stable release..."
+            LATEST_STABLE_TAG=$(gh release list --repo ublue-os/bazzite --limit 30 --json tagName,isPrerelease \
+              -q '[.[] | select(.isPrerelease==false) | select(.tagName|startswith("'"$FEDORA_VER"'."))][0].tagName')
+            if [ -n "$LATEST_STABLE_TAG" ] && [ "$LATEST_STABLE_TAG" != "null" ]; then
+              NVIDIA_VER=$(gh release view "${LATEST_STABLE_TAG}" --repo ublue-os/bazzite --json body \
+                -q '.body' 2>/dev/null \
+                | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)
+            fi
+            echo "Fallback do '${LATEST_STABLE_TAG:-brak}' → NVIDIA '${NVIDIA_VER:-brak}'"
           fi
 
           if [ -z "$NVIDIA_VER" ]; then
