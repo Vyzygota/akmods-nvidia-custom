@@ -330,6 +330,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
+          # Wymuszony build (force=true) przy niezmienionych wersjach nie ma czego commitować —
+          # to nie jest błąd; dispatch do BEB ma pójść dalej.
+          if git diff --cached --quiet; then
+            echo "versions.lock bez zmian — pomijam commit."
+            exit 0
+          fi
           git commit -m "chore: update versions.lock [skip ci]"
           git pull --rebase origin main
           git push
