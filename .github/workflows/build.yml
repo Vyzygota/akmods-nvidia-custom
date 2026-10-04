@@ -36,7 +36,7 @@ jobs:
       sources: ${{ steps.scrape.outputs.sources }}
     steps:
       - name: Pobranie repozytorium
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Wykrywanie Najnowszych Wersji
         id: scrape
@@ -247,7 +247,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie repozytorium
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Logowanie do GHCR
         uses: docker/login-action@v4

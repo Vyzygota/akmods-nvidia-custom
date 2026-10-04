@@ -8,7 +8,7 @@ Automated factory that compiles the latest stable Linux kernel and NVIDIA driver
 
 | Component | Source | Notes |
 |-----------|--------|-------|
-| Linux kernel | kernel.org (latest stable) | Built from `@kernel-vanilla` COPR |
+| Linux kernel | `@kernel-vanilla` COPR (latest stable available for the Fedora) | Prebuilt vanilla kernel packages; `kernel.org` is only a reference in the log |
 | NVIDIA drivers | `ublue-os/bazzite` stable release matching the base image | Compiled from `.run` installer; version must match the driver shipped in the base image |
 | evdi | `DisplayLink/evdi` latest release | DisplayLink kernel module |
 | LenovoLegionLinux | `johnfanv2/LenovoLegionLinux` latest release | Fan/power control for Lenovo Legion (a release tag, not the moving `main` branch) |
