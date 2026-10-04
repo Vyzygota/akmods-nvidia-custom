@@ -38,23 +38,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 1. Dynamiczne scrapowanie najnowszej stabilnej wersji Fedory
-          FEDORA_VER=$(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ \
-            | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn | head -n 1)
-
-          # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
-          echo "--- Wykrywanie wersji NVIDIA z Bazzite base image ---"
-
           # skopeo bywa już zainstalowany na runnerze — doinstaluj tylko gdy go brak
           command -v skopeo >/dev/null || sudo apt-get install -y -q skopeo 2>&1 | tail -1
-          BAZZITE_IMG_LABEL=$(skopeo inspect --no-creds \
-            docker://ghcr.io/ublue-os/bazzite-deck-nvidia:unstable-${FEDORA_VER} \
-            | jq -r '.Labels["org.opencontainers.image.version"]')
 
-          # Tag releasu w ublue-os/bazzite to pełna etykieta obrazu (np. "unstable-44.20260917");
-          # do versions.lock trafia sam numer bez prefiksu (np. "44.20260917").
+          # 1. Najnowsza Fedora, dla której Bazzite publikuje stabilny obraz bazowy (stable-<Fedora>).
+          #    GA Fedory bywa przed Bazzite — wtedy zostajemy na ostatniej wersji obsługiwanej przez Bazzite.
+          #    Brak tagu ("manifest unknown") = próbuj niższą Fedorę; każdy inny błąd przerywa (bez cichego cofnięcia wersji).
+          SKOPEO_ERR=$(mktemp)
+          FEDORA_VER=""
+          for v in $(curl -sL https://dl.fedoraproject.org/pub/fedora/linux/releases/ \
+              | grep -oE 'href="[0-9]+/"' | grep -oE '[0-9]+' | sort -rn); do
+            if BAZZITE_META=$(skopeo inspect --no-creds \
+                "docker://ghcr.io/ublue-os/bazzite-deck-nvidia:stable-${v}" 2>"$SKOPEO_ERR"); then
+              FEDORA_VER=$v
+              break
+            fi
+            if ! grep -q 'manifest unknown' "$SKOPEO_ERR"; then
+              echo "KRYTYCZNY BŁĄD: skopeo inspect stable-${v} zwrócił nieoczekiwany błąd:"
+              cat "$SKOPEO_ERR"
+              exit 1
+            fi
+            echo "Bazzite nie publikuje jeszcze stable-${v} — próbuję niższą Fedorę..."
+          done
+          if [ -z "$FEDORA_VER" ]; then
+            echo "KRYTYCZNY BŁĄD: Nie znaleziono Fedory z obrazem Bazzite stable-<wersja>!"
+            exit 1
+          fi
+
+          # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
+          echo "--- Wykrywanie wersji NVIDIA z Bazzite base image (stable-${FEDORA_VER}) ---"
+          BAZZITE_IMG_LABEL=$(jq -r '.Labels["org.opencontainers.image.version"]' <<<"$BAZZITE_META")
+
+          # Tag releasu w ublue-os/bazzite to pełna etykieta obrazu (np. "44.20260929");
+          # do versions.lock trafia sama wersja bez ewentualnego prefiksu kanału (np. "testing-").
           BAZZITE_TAG="$BAZZITE_IMG_LABEL"
-          BAZZITE_VER="${BAZZITE_IMG_LABEL#unstable-}"
+          BAZZITE_VER=$(sed -E 's/^[a-z]+-//' <<<"$BAZZITE_IMG_LABEL")
           echo "Bazzite base image: $BAZZITE_IMG_LABEL (release tag: $BAZZITE_TAG, wersja: $BAZZITE_VER)"
 
           NVIDIA_VER=$(gh release view "${BAZZITE_TAG}" --repo ublue-os/bazzite --json body \
@@ -63,9 +81,11 @@ jobs:
 
           if [ -z "$NVIDIA_VER" ]; then
             echo "Brak release Bazzite dla '${BAZZITE_TAG}' — szukam w najnowszym stable release..."
-            LATEST_STABLE_TAG=$(gh release list --repo ublue-os/bazzite --limit 30 --json tagName,isPrerelease \
-              -q '[.[] | select(.isPrerelease==false) | select(.tagName|startswith("'"$FEDORA_VER"'."))][0].tagName')
-            if [ -n "$LATEST_STABLE_TAG" ] && [ "$LATEST_STABLE_TAG" != "null" ]; then
+            # Bez okna na liczbę releasów: --paginate idzie od najnowszych aż do pierwszego stable dla tej Fedory.
+            LATEST_STABLE_TAG=$(gh api --paginate "repos/ublue-os/bazzite/releases?per_page=100" \
+              --jq ".[] | select(.prerelease==false and .draft==false) | select(.tag_name|startswith(\"${FEDORA_VER}.\")) | .tag_name" \
+              | grep -m1 -E "^${FEDORA_VER}\." || true)
+            if [ -n "$LATEST_STABLE_TAG" ]; then
               NVIDIA_VER=$(gh release view "${LATEST_STABLE_TAG}" --repo ublue-os/bazzite --json body \
                 -q '.body' 2>/dev/null \
                 | grep "Nvidia Open" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)

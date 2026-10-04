@@ -9,17 +9,17 @@ Automated factory that compiles the latest stable Linux kernel and NVIDIA driver
 | Component | Source | Notes |
 |-----------|--------|-------|
 | Linux kernel | kernel.org (latest stable) | Built from `@kernel-vanilla` COPR |
-| NVIDIA drivers | download.nvidia.com (latest) | Compiled from `.run` installer |
+| NVIDIA drivers | `ublue-os/bazzite` stable release matching the base image | Compiled from `.run` installer; version must match the driver shipped in the base image |
 | LenovoLegionLinux | upstream | Fan/power control for Lenovo Legion |
 | Dummy RPM | local | Satisfies Bazzite dependency checks |
 
 ## How it works
 
-**Cyber-Spider** — the first job in the pipeline — scrapes three sources on every run:
+**Cyber-Spider** — the first job in the pipeline — scrapes its sources on every run, always picking the latest stable version (no pinned numbers):
 
-- `kernel.org` for the latest stable kernel version
-- `download.nvidia.com` for the latest NVIDIA driver
-- `fedoraproject.org` for the latest Fedora release
+- `fedoraproject.org` for the latest Fedora release **for which Bazzite publishes a `stable-<Fedora>` base image** (if Fedora GA comes first, it stays on the previous release until Bazzite catches up)
+- the `bazzite-deck-nvidia:stable-<Fedora>` image label and the matching `ublue-os/bazzite` release for the NVIDIA driver version
+- `kernel.org` / `@kernel-vanilla` COPR for the latest stable kernel available for that Fedora
 
 It then compares the detected versions against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
 
