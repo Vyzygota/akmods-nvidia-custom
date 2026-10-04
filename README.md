@@ -27,6 +27,8 @@ For every component the factory builds, the spider also collects the **source ad
 
 It then compares the detected versions (including the LenovoLegionLinux tag) against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
 
+If the spider itself fails on `main` (a source is missing, an API is down), it sends a Discord alarm through the same `DISCORD_WEBHOOK` secret as the build job: the step that failed, the reason (when the spider knows it) and a link to the run. The build job keeps its own alarm.
+
 Runs started from a branch (e.g. a PR) perform the full build **without** pushing the image, updating `versions.lock`, notifying BEB or raising the Discord alarm — only `main` publishes.
 
 ```
