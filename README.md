@@ -10,7 +10,8 @@ Automated factory that compiles the latest stable Linux kernel and NVIDIA driver
 |-----------|--------|-------|
 | Linux kernel | kernel.org (latest stable) | Built from `@kernel-vanilla` COPR |
 | NVIDIA drivers | `ublue-os/bazzite` stable release matching the base image | Compiled from `.run` installer; version must match the driver shipped in the base image |
-| LenovoLegionLinux | upstream | Fan/power control for Lenovo Legion |
+| evdi | `DisplayLink/evdi` latest release | DisplayLink kernel module |
+| LenovoLegionLinux | `johnfanv2/LenovoLegionLinux` latest release | Fan/power control for Lenovo Legion (a release tag, not the moving `main` branch) |
 | Dummy RPM | local | Satisfies Bazzite dependency checks |
 
 ## How it works
@@ -20,11 +21,16 @@ Automated factory that compiles the latest stable Linux kernel and NVIDIA driver
 - `fedoraproject.org` for the latest Fedora release **for which Bazzite publishes a `stable-<Fedora>` base image** (if Fedora GA comes first, it stays on the previous release until Bazzite catches up)
 - the `bazzite-deck-nvidia:stable-<Fedora>` image label and the matching `ublue-os/bazzite` release for the NVIDIA driver version
 - `kernel.org` / `@kernel-vanilla` COPR for the latest stable kernel available for that Fedora
+- the latest release of `DisplayLink/evdi` and `johnfanv2/LenovoLegionLinux`
 
-It then compares the detected versions against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
+For every component the factory builds, the spider also collects the **source address** (COPR repo for the kernel, the NVIDIA `.run` URL, the evdi and LenovoLegionLinux release tarballs), checks that each one responds, and aborts the run *before* the expensive build if any source is missing. The addresses are written to the job summary as a table and passed to the build as `NVIDIA_URL` / `EVDI_URL` / `LLL_URL` build-args, so the `Containerfile` no longer composes URLs on its own (the full manifest is also exposed as the `sources` job output).
+
+It then compares the detected versions (including the LenovoLegionLinux tag) against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
+
+Runs started from a branch (e.g. a PR) perform the full build **without** pushing the image, updating `versions.lock`, notifying BEB or raising the Discord alarm — only `main` publishes.
 
 ```
-Cyber-Spider detects versions
+Cyber-Spider detects versions + collects/verifies source addresses
     └─► Compare with versions.lock
             ├─► No changes → stop, nothing to do
             └─► New version found → compile → push OCI → update lock → trigger BEB
