@@ -43,6 +43,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Przyczyna awarii trafia też do pliku — odczyta ją krok alarmu Discord na końcu jobu.
+          SPIDER_ERR="$RUNNER_TEMP/spider_error.txt"
+          die() { echo "KRYTYCZNY BŁĄD: $*"; echo "$*" > "$SPIDER_ERR"; exit 1; }
+
           # skopeo bywa już zainstalowany na runnerze — doinstaluj tylko gdy go brak
           command -v skopeo >/dev/null || sudo apt-get install -y -q skopeo 2>&1 | tail -1
 
@@ -59,15 +63,12 @@ jobs:
               break
             fi
             if ! grep -q 'manifest unknown' "$SKOPEO_ERR"; then
-              echo "KRYTYCZNY BŁĄD: skopeo inspect stable-${v} zwrócił nieoczekiwany błąd:"
-              cat "$SKOPEO_ERR"
-              exit 1
+              die "skopeo inspect stable-${v} zwrócił nieoczekiwany błąd: $(head -c 300 "$SKOPEO_ERR")"
             fi
             echo "Bazzite nie publikuje jeszcze stable-${v} — próbuję niższą Fedorę..."
           done
           if [ -z "$FEDORA_VER" ]; then
-            echo "KRYTYCZNY BŁĄD: Nie znaleziono Fedory z obrazem Bazzite stable-<wersja>!"
-            exit 1
+            die "Nie znaleziono Fedory z obrazem Bazzite stable-<wersja>"
           fi
 
           # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
@@ -99,8 +100,7 @@ jobs:
           fi
 
           if [ -z "$NVIDIA_VER" ]; then
-            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji NVIDIA z Bazzite releases!"
-            exit 1
+            die "Nie udało się pobrać wersji NVIDIA z Bazzite releases (obraz stable-${FEDORA_VER}, tag '${BAZZITE_TAG}')"
           fi
 
           echo "NVIDIA (z Bazzite): $NVIDIA_VER"
@@ -119,16 +119,14 @@ jobs:
           # 4. evdi (DisplayLink — wymagany przez Viture Beast XR) — najnowszy stable release
           EVDI_VER=$(gh api repos/DisplayLink/evdi/releases/latest --jq '.tag_name' | sed 's/^v//')
           if [ -z "$EVDI_VER" ]; then
-            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji evdi z GitHub!"
-            exit 1
+            die "Nie udało się pobrać wersji evdi z GitHub"
           fi
           echo "evdi (DisplayLink): $EVDI_VER"
 
           # 5. LenovoLegionLinux — najnowszy stable release (zamiast ruchomej gałęzi main)
           LLL_TAG=$(gh api repos/johnfanv2/LenovoLegionLinux/releases/latest --jq '.tag_name')
           if [ -z "$LLL_TAG" ]; then
-            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji LenovoLegionLinux z GitHub!"
-            exit 1
+            die "Nie udało się pobrać wersji LenovoLegionLinux z GitHub"
           fi
           echo "LenovoLegionLinux: $LLL_TAG"
 
@@ -159,8 +157,7 @@ jobs:
           MANIFEST=$(jq -c --arg v "$BAZZITE_IMG_LABEL" --arg u "docker://ghcr.io/ublue-os/bazzite-deck-nvidia:stable-${FEDORA_VER}" \
             '. + [{name:"bazzite-base", version:$v, url:$u, verified:"skopeo inspect"}]' <<<"$MANIFEST")
           if [ -n "$FAILED" ]; then
-            echo "KRYTYCZNY BŁĄD: niedostępne źródła:$FAILED — przerywam przed buildem."
-            exit 1
+            die "niedostępne źródła:$FAILED — przerywam przed buildem"
           fi
           SOURCES=$(jq -c -n --arg fedora "$FEDORA_VER" --argjson components "$MANIFEST" '{fedora:$fedora, components:$components}')
           {
@@ -195,6 +192,29 @@ jobs:
           else
             echo "Wykryto zmiany: $OLD → $NEW"
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Powiadom o awarii Pająka
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          SCRAPE_OUTCOME: ${{ steps.scrape.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$SCRAPE_OUTCOME" = "failure" ]; then STEP="Wykrywanie Najnowszych Wersji"
+          elif [ "$COMPARE_OUTCOME" = "failure" ]; then STEP="Sprawdź czy wersje się zmieniły"
+          else STEP="przygotowanie jobu (checkout)"; fi
+          REASON=$(head -c 600 "$RUNNER_TEMP/spider_error.txt" 2>/dev/null || true)
+          MSG="🕷️ **ALARM!** Cyber-Pająk nie zebrał źródeł dla Fabryki — padł krok: ${STEP}. Fabryka nie zbuduje nowych wersji, dopóki to nie zostanie naprawione."
+          if [ -n "$REASON" ]; then MSG="${MSG}"$'\n'"Przyczyna: ${REASON}"; fi
+          MSG="${MSG}"$'\n'"Log: ${RUN_URL}"
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            CODE=$(jq -n --arg c "$MSG" '{content:$c}' \
+              | curl -sS -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK" || true)
+            echo "Discord: HTTP ${CODE:-000}"
+          else
+            echo "Pająk zakończył się błędem, ale brak skonfigurowanego webhooka w zakładce Secrets."
           fi
 
   build:
