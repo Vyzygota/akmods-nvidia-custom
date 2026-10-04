@@ -23,6 +23,8 @@ Automated factory that compiles the latest stable Linux kernel and NVIDIA driver
 - `kernel.org` / `@kernel-vanilla` COPR for the latest stable kernel available for that Fedora
 - the latest release of `DisplayLink/evdi` and `johnfanv2/LenovoLegionLinux`
 
+Versions and tags that come from upstream APIs are validated (letters, digits and `. _ + -` only) before they are used in addresses or passed on, and later steps receive them through `env:` instead of inline `${{ }}` expressions, so a hostile tag name cannot inject shell code.
+
 For every component the factory builds, the spider also collects the **source address** (COPR repo for the kernel, the NVIDIA `.run` URL, the evdi and LenovoLegionLinux release tarballs), checks that each one responds, and aborts the run *before* the expensive build if any source is missing. The addresses are written to the job summary as a table and passed to the build as `NVIDIA_URL` / `EVDI_URL` / `LLL_URL` build-args, so the `Containerfile` no longer composes URLs on its own (the full manifest is also exposed as the `sources` job output).
 
 It then compares the detected versions (including the LenovoLegionLinux tag) against `versions.lock`. If nothing changed, the build is skipped entirely. If any version is new, the factory compiles everything from source, pushes the OCI artifact to GHCR, updates `versions.lock`, and triggers a BleedingEdgeBazzite rebuild.
