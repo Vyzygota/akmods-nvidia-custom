@@ -17,6 +17,12 @@ permissions:
   contents: write
   packages: write
 
+# Jedna Fabryka naraz: kolejny run (push + harmonogram) czeka na zakończenie trwającego, zamiast
+# ścigać się o :latest i o commit versions.lock. Trwającego builda nigdy nie przerywamy.
+concurrency:
+  group: fabryka-build
+  cancel-in-progress: false
+
 jobs:
   matrix-spider:
     name: Cyber-Pająk Zwiadowca
@@ -193,6 +199,42 @@ jobs:
             echo "Wykryto zmiany: $OLD → $NEW"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Pilnuj Watchdoga BEB
+        # Watchdog w BEB jest zaplanowanym workflow w rzadko commitowanym repo: GitHub wyłącza taki workflow
+        # po 60 dniach bez aktywności ("disabled_inactivity") i alarmy milkną. Fabryka commituje często, więc
+        # pilnuje go codziennie: włącza ponownie tylko przy disabled_inactivity (ręcznego wyłączenia nie rusza).
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEB_TOKEN: ${{ secrets.BEB_DISPATCH_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          WF="repos/Vyzygota/BleedingEdgeBazzite/actions/workflows/fabryka-watchdog.yml"
+          WF_URL="https://github.com/Vyzygota/BleedingEdgeBazzite/actions/workflows/fabryka-watchdog.yml"
+          notify() {  # treść
+            [ "$IS_MAIN" = "true" ] && [ -n "$DISCORD_WEBHOOK" ] || return 0
+            jq -n --arg c "$1" '{content:$c}' \
+              | curl -sS -o /dev/null -w 'Discord: HTTP %{http_code}\n' -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK" || true
+          }
+          STATE=$(gh api "$WF" --jq '.state' 2>/dev/null || echo "nieznany")
+          echo "Watchdog BEB: state=$STATE"
+          case "$STATE" in
+            active) ;;
+            disabled_inactivity)
+              if [ "$IS_MAIN" != "true" ]; then
+                echo "Uruchomienie spoza main — nie włączam Watchdoga."
+              elif GH_TOKEN="$BEB_TOKEN" gh api -X PUT "$WF/enable" --silent 2>/dev/null; then
+                echo "Watchdog BEB włączony ponownie."
+                notify "ℹ️ Fabryka: Watchdog w BEB był wyłączony przez GitHub (60 dni bez aktywności) — włączyłem go ponownie."
+              else
+                echo "Nie udało się włączyć Watchdoga BEB (brak uprawnień tokenu?)."
+                notify "⚠️ Watchdog w BEB jest wyłączony przez GitHub (60 dni bez aktywności), a nie mogłem go włączyć automatycznie. Włącz ręcznie: ${WF_URL}"
+              fi ;;
+            *) echo "Stan Watchdoga inny niż active — nic nie zmieniam." ;;
+          esac
 
       - name: Powiadom o awarii Pająka
         if: failure() && github.ref == 'refs/heads/main'

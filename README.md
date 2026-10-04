@@ -29,6 +29,10 @@ It then compares the detected versions (including the LenovoLegionLinux tag) aga
 
 If the spider itself fails on `main` (a source is missing, an API is down), it sends a Discord alarm through the same `DISCORD_WEBHOOK` secret as the build job: the step that failed, the reason (when the spider knows it) and a link to the run. The build job keeps its own alarm.
 
+Only one factory run executes at a time (`concurrency`): a run triggered while another one is building waits instead of racing for `:latest` and the `versions.lock` commit; a running build is never cancelled.
+
+The spider also watches the Watchdog in BleedingEdgeBazzite: GitHub disables scheduled workflows in repositories without activity for 60 days (`disabled_inactivity`), so every run checks the Watchdog's state and re-enables it when GitHub disabled it that way (a manual disable is left alone). The result is reported on Discord.
+
 Runs started from a branch (e.g. a PR) perform the full build **without** pushing the image, updating `versions.lock`, notifying BEB or raising the Discord alarm — only `main` publishes.
 
 ```
