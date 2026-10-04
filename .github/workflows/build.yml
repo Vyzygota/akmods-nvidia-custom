@@ -47,6 +47,13 @@ jobs:
           SPIDER_ERR="$RUNNER_TEMP/spider_error.txt"
           die() { echo "KRYTYCZNY BŁĄD: $*"; echo "$*" > "$SPIDER_ERR"; exit 1; }
 
+          # Wersje i tagi pochodzą z zewnętrznych źródeł (API upstreamów) i trafiają do wyjść joba, a stamtąd
+          # do kolejnych kroków — przepuszczamy wyłącznie bezpieczne tokeny (litery, cyfry, . _ + -).
+          safe() {  # nazwa wartość
+            [[ "$2" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] \
+              || die "Niepoprawna wartość '$1' (oczekiwano tokenu wersji): $(printf '%q' "${2:0:80}")"
+          }
+
           # skopeo bywa już zainstalowany na runnerze — doinstaluj tylko gdy go brak
           command -v skopeo >/dev/null || sudo apt-get install -y -q skopeo 2>&1 | tail -1
 
@@ -74,6 +81,7 @@ jobs:
           # 2. NVIDIA — jedyne źródło prawdy: Bazzite base image
           echo "--- Wykrywanie wersji NVIDIA z Bazzite base image (stable-${FEDORA_VER}) ---"
           BAZZITE_IMG_LABEL=$(jq -r '.Labels["org.opencontainers.image.version"]' <<<"$BAZZITE_META")
+          safe bazzite-label "$BAZZITE_IMG_LABEL"
 
           # Tag releasu w ublue-os/bazzite to pełna etykieta obrazu (np. "44.20260929");
           # do versions.lock trafia sama wersja bez ewentualnego prefiksu kanału (np. "testing-").
@@ -130,6 +138,14 @@ jobs:
           fi
           echo "LenovoLegionLinux: $LLL_TAG"
 
+          # Walidacja formatu wszystkiego, co przyszło z zewnątrz, zanim zostanie użyte w adresach i wyjściach.
+          safe fedora "$FEDORA_VER"
+          safe bazzite "$BAZZITE_VER"
+          safe nvidia "$NVIDIA_VER"
+          safe linux "$LINUX_VER"
+          safe evdi "$EVDI_VER"
+          safe lll "$LLL_TAG"
+
           # 6. Adresy źródeł wszystkich składników, które buduje Fabryka — i kontrola, że każdy odpowiada,
           #    zanim wystartuje kosztowny build. Fabryka dostaje adresy jako build-argi (nie składa ich sama).
           NVIDIA_URL="https://us.download.nvidia.com/XFree86/Linux-x86_64/${NVIDIA_VER}/NVIDIA-Linux-x86_64-${NVIDIA_VER}.run"
@@ -183,8 +199,15 @@ jobs:
 
       - name: Sprawdź czy wersje się zmieniły
         id: compare
+        env:
+          V_FEDORA: ${{ steps.scrape.outputs.fedora }}
+          V_NVIDIA: ${{ steps.scrape.outputs.nvidia }}
+          V_LINUX: ${{ steps.scrape.outputs.linux }}
+          V_BAZZITE: ${{ steps.scrape.outputs.bazzite }}
+          V_EVDI: ${{ steps.scrape.outputs.evdi }}
+          V_LLL: ${{ steps.scrape.outputs.lll }}
         run: |
-          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }} evdi=${{ steps.scrape.outputs.evdi }} lll=${{ steps.scrape.outputs.lll }}"
+          NEW="fedora=$V_FEDORA nvidia=$V_NVIDIA linux=$V_LINUX bazzite=$V_BAZZITE evdi=$V_EVDI lll=$V_LLL"
           OLD=$(cat versions.lock 2>/dev/null || echo "")
           if [ "$OLD" = "$NEW" ]; then
             echo "Brak zmian wersji — pomijam build."
@@ -253,8 +276,15 @@ jobs:
 
       - name: Zaktualizuj versions.lock
         if: success() && github.ref == 'refs/heads/main'
+        env:
+          V_FEDORA: ${{ needs.matrix-spider.outputs.fedora }}
+          V_NVIDIA: ${{ needs.matrix-spider.outputs.nvidia }}
+          V_LINUX: ${{ needs.matrix-spider.outputs.linux }}
+          V_BAZZITE: ${{ needs.matrix-spider.outputs.bazzite }}
+          V_EVDI: ${{ needs.matrix-spider.outputs.evdi }}
+          V_LLL: ${{ needs.matrix-spider.outputs.lll }}
         run: |
-          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }} evdi=${{ needs.matrix-spider.outputs.evdi }} lll=${{ needs.matrix-spider.outputs.lll }}" > versions.lock
+          echo "fedora=$V_FEDORA nvidia=$V_NVIDIA linux=$V_LINUX bazzite=$V_BAZZITE evdi=$V_EVDI lll=$V_LLL" > versions.lock
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
@@ -264,12 +294,16 @@ jobs:
 
       - name: Uruchom BleedingEdgeBazzite
         if: success() && github.ref == 'refs/heads/main'
+        env:
+          BEB_TOKEN: ${{ secrets.BEB_DISPATCH_TOKEN }}
+          V_FEDORA: ${{ needs.matrix-spider.outputs.fedora }}
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: Bearer ${{ secrets.BEB_DISPATCH_TOKEN }}" \
-            https://api.github.com/repos/Vyzygota/BleedingEdgeBazzite/dispatches \
-            -d "{\"event_type\":\"akmods_updated\",\"client_payload\":{\"fedora_version\":\"${{ needs.matrix-spider.outputs.fedora }}\"}}")
+          HTTP_STATUS=$(jq -n --arg v "$V_FEDORA" '{event_type:"akmods_updated", client_payload:{fedora_version:$v}}' \
+            | curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: Bearer $BEB_TOKEN" \
+              https://api.github.com/repos/Vyzygota/BleedingEdgeBazzite/dispatches \
+              -d @-)
           if [ "$HTTP_STATUS" = "204" ]; then
             echo "✅ BEB dispatch wysłany pomyślnie."
           else
@@ -281,11 +315,14 @@ jobs:
         if: failure() && github.ref == 'refs/heads/main'
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          V_LINUX: ${{ needs.matrix-spider.outputs.linux }}
+          V_NVIDIA: ${{ needs.matrix-spider.outputs.nvidia }}
         run: |
+          MSG="🚨 **ALARM!** Cyber-Pająk melduje: Kompilacja All Latest (Kernel ${V_LINUX} + NVIDIA ${V_NVIDIA}) właśnie eksplodowała! Pancerz ochronny nie wytrzymał. Wymagana interwencja twórcy!"
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            curl -H "Content-Type: application/json" \
-            -d "{\"content\": \"🚨 **ALARM!** Cyber-Pająk melduje: Kompilacja All Latest (Kernel ${{ needs.matrix-spider.outputs.linux }} + NVIDIA ${{ needs.matrix-spider.outputs.nvidia }}) właśnie eksplodowała! Pancerz ochronny nie wytrzymał. Wymagana interwencja twórcy!\"}" \
-            $DISCORD_WEBHOOK
+            CODE=$(jq -n --arg c "$MSG" '{content:$c}' \
+              | curl -sS -o /dev/null -w '%{http_code}' -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK" || true)
+            echo "Discord: HTTP ${CODE:-000}"
           else
             echo "Kompilacja zakończona błędem, ale brak skonfigurowanego webhooka w zakładce Secrets."
           fi
