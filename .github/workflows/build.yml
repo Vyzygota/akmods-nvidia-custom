@@ -29,6 +29,11 @@ jobs:
       linux_available: ${{ steps.scrape.outputs.linux_available }}
       bazzite: ${{ steps.scrape.outputs.bazzite }}
       evdi: ${{ steps.scrape.outputs.evdi }}
+      lll: ${{ steps.scrape.outputs.lll }}
+      nvidia_url: ${{ steps.scrape.outputs.nvidia_url }}
+      evdi_url: ${{ steps.scrape.outputs.evdi_url }}
+      lll_url: ${{ steps.scrape.outputs.lll_url }}
+      sources: ${{ steps.scrape.outputs.sources }}
     steps:
       - name: Pobranie repozytorium
         uses: actions/checkout@v6
@@ -102,7 +107,9 @@ jobs:
 
           # 3. Najnowszy stable kernel dostępny dla aktualnej Fedory (z COPR kernel-vanilla/fedora)
           LINUX_VER_LATEST=$(curl -sL https://www.kernel.org/releases.json | jq -r '.latest_stable.version')
-          LINUX_VER_COPR=$(curl -s "https://copr.fedorainfracloud.org/api_3/build/list?ownername=@kernel-vanilla&projectname=fedora&status=succeeded&limit=30" \
+          # Filtr po pakiecie po stronie API (zamiast okna "ostatnie N buildów" całego projektu);
+          # select po nazwie w jq zostaje jako asekuracja, gdyby API zignorowało parametr.
+          LINUX_VER_COPR=$(curl -s "https://copr.fedorainfracloud.org/api_3/build/list?ownername=@kernel-vanilla&projectname=fedora&packagename=stable-fedora-releases&status=succeeded" \
             | jq -r --arg fc "fedora-${FEDORA_VER}-x86_64" \
             '[.items[] | select(.source_package.name=="stable-fedora-releases") | select(.chroots[] | contains($fc))] | first | .source_package.version | split("-")[0]' \
             2>/dev/null | grep -v null || true)
@@ -117,18 +124,70 @@ jobs:
           fi
           echo "evdi (DisplayLink): $EVDI_VER"
 
-          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER, Bazzite=$BAZZITE_VER, evdi=$EVDI_VER"
+          # 5. LenovoLegionLinux — najnowszy stable release (zamiast ruchomej gałęzi main)
+          LLL_TAG=$(gh api repos/johnfanv2/LenovoLegionLinux/releases/latest --jq '.tag_name')
+          if [ -z "$LLL_TAG" ]; then
+            echo "KRYTYCZNY BŁĄD: Nie udało się pobrać wersji LenovoLegionLinux z GitHub!"
+            exit 1
+          fi
+          echo "LenovoLegionLinux: $LLL_TAG"
+
+          # 6. Adresy źródeł wszystkich składników, które buduje Fabryka — i kontrola, że każdy odpowiada,
+          #    zanim wystartuje kosztowny build. Fabryka dostaje adresy jako build-argi (nie składa ich sama).
+          NVIDIA_URL="https://us.download.nvidia.com/XFree86/Linux-x86_64/${NVIDIA_VER}/NVIDIA-Linux-x86_64-${NVIDIA_VER}.run"
+          EVDI_URL="https://github.com/DisplayLink/evdi/archive/refs/tags/v${EVDI_VER}.tar.gz"
+          LLL_URL="https://github.com/johnfanv2/LenovoLegionLinux/archive/refs/tags/${LLL_TAG}.tar.gz"
+          KERNEL_REPO_URL="https://download.copr.fedorainfracloud.org/results/@kernel-vanilla/fedora/fedora-${FEDORA_VER}-x86_64/"
+
+          FAILED=""
+          MANIFEST='[]'
+          add_source() {  # nazwa wersja adres [adres-do-sprawdzenia]
+            local name="$1" ver="$2" url="$3" check="${4:-$3}" code
+            code=$(curl -sIL --max-time 60 -o /dev/null -w '%{http_code}' "$check" 2>/dev/null || true)
+            [ -n "$code" ] || code=000
+            echo "  [HTTP $code] $name $ver — $url"
+            [ "$code" = "200" ] || FAILED="$FAILED $name"
+            MANIFEST=$(jq -c --arg n "$name" --arg v "$ver" --arg u "$url" --arg c "HTTP $code" \
+              '. + [{name:$n, version:$v, url:$u, verified:$c}]' <<<"$MANIFEST")
+          }
+          echo "--- Źródła składników (kontrola dostępności) ---"
+          add_source kernel "$LINUX_VER" "$KERNEL_REPO_URL" "${KERNEL_REPO_URL}repodata/repomd.xml"
+          [ -n "$LINUX_VER_COPR" ] || { echo "  COPR nie ma jeszcze kernela dla f${FEDORA_VER} (kernel.org: $LINUX_VER_LATEST)"; FAILED="$FAILED kernel-COPR"; }
+          add_source nvidia "$NVIDIA_VER" "$NVIDIA_URL"
+          add_source evdi "$EVDI_VER" "$EVDI_URL"
+          add_source lenovo-legion-linux "$LLL_TAG" "$LLL_URL"
+          MANIFEST=$(jq -c --arg v "$BAZZITE_IMG_LABEL" --arg u "docker://ghcr.io/ublue-os/bazzite-deck-nvidia:stable-${FEDORA_VER}" \
+            '. + [{name:"bazzite-base", version:$v, url:$u, verified:"skopeo inspect"}]' <<<"$MANIFEST")
+          if [ -n "$FAILED" ]; then
+            echo "KRYTYCZNY BŁĄD: niedostępne źródła:$FAILED — przerywam przed buildem."
+            exit 1
+          fi
+          SOURCES=$(jq -c -n --arg fedora "$FEDORA_VER" --argjson components "$MANIFEST" '{fedora:$fedora, components:$components}')
+          {
+            echo "### Źródła wydania (Cyber-Pająk)"
+            echo
+            echo "| Składnik | Wersja | Źródło | Sprawdzone |"
+            echo "|---|---|---|---|"
+            jq -r '.components[] | "| \(.name) | \(.version) | \(.url) | \(.verified) |"' <<<"$SOURCES"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Znalazłem: Fedora=$FEDORA_VER, NVIDIA=$NVIDIA_VER, LINUX=$LINUX_VER, Bazzite=$BAZZITE_VER, evdi=$EVDI_VER, LLL=$LLL_TAG"
           echo "fedora=$FEDORA_VER"    >> "$GITHUB_OUTPUT"
           echo "nvidia=$NVIDIA_VER"   >> "$GITHUB_OUTPUT"
           echo "linux=$LINUX_VER"     >> "$GITHUB_OUTPUT"
           echo "linux_available=${LINUX_VER_COPR:-nie}" >> "$GITHUB_OUTPUT"
           echo "bazzite=$BAZZITE_VER" >> "$GITHUB_OUTPUT"
           echo "evdi=$EVDI_VER"       >> "$GITHUB_OUTPUT"
+          echo "lll=$LLL_TAG"         >> "$GITHUB_OUTPUT"
+          echo "nvidia_url=$NVIDIA_URL" >> "$GITHUB_OUTPUT"
+          echo "evdi_url=$EVDI_URL"   >> "$GITHUB_OUTPUT"
+          echo "lll_url=$LLL_URL"     >> "$GITHUB_OUTPUT"
+          echo "sources=$SOURCES"     >> "$GITHUB_OUTPUT"
 
       - name: Sprawdź czy wersje się zmieniły
         id: compare
         run: |
-          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }} evdi=${{ steps.scrape.outputs.evdi }}"
+          NEW="fedora=${{ steps.scrape.outputs.fedora }} nvidia=${{ steps.scrape.outputs.nvidia }} linux=${{ steps.scrape.outputs.linux }} bazzite=${{ steps.scrape.outputs.bazzite }} evdi=${{ steps.scrape.outputs.evdi }} lll=${{ steps.scrape.outputs.lll }}"
           OLD=$(cat versions.lock 2>/dev/null || echo "")
           if [ "$OLD" = "$NEW" ]; then
             echo "Brak zmian wersji — pomijam build."
@@ -159,18 +218,23 @@ jobs:
         with:
           context: .
           file: ./Containerfile
-          push: true
+          # Obraz publikujemy tylko z main; uruchomienie z innej gałęzi (np. PR) robi pełny build bez push,
+          # bez zapisu locka, bez dispatchu do BEB i bez alarmu — bezpieczna weryfikacja zmian.
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/vyzygota/akmods-nvidia-custom:latest
           build-args: |
             FEDORA_VERSION=${{ needs.matrix-spider.outputs.fedora }}
             NVIDIA_VERSION=${{ needs.matrix-spider.outputs.nvidia }}
+            NVIDIA_URL=${{ needs.matrix-spider.outputs.nvidia_url }}
             LINUX_VERSION=${{ needs.matrix-spider.outputs.linux }}
             EVDI_VERSION=${{ needs.matrix-spider.outputs.evdi }}
+            EVDI_URL=${{ needs.matrix-spider.outputs.evdi_url }}
+            LLL_URL=${{ needs.matrix-spider.outputs.lll_url }}
 
       - name: Zaktualizuj versions.lock
-        if: success()
+        if: success() && github.ref == 'refs/heads/main'
         run: |
-          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }} evdi=${{ needs.matrix-spider.outputs.evdi }}" > versions.lock
+          echo "fedora=${{ needs.matrix-spider.outputs.fedora }} nvidia=${{ needs.matrix-spider.outputs.nvidia }} linux=${{ needs.matrix-spider.outputs.linux }} bazzite=${{ needs.matrix-spider.outputs.bazzite }} evdi=${{ needs.matrix-spider.outputs.evdi }} lll=${{ needs.matrix-spider.outputs.lll }}" > versions.lock
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.lock
@@ -179,7 +243,7 @@ jobs:
           git push
 
       - name: Uruchom BleedingEdgeBazzite
-        if: success()
+        if: success() && github.ref == 'refs/heads/main'
         run: |
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             -H "Accept: application/vnd.github.v3+json" \
@@ -194,7 +258,7 @@ jobs:
           fi
 
       - name: Powiadom o pożarze w fabryce "All Latest"
-        if: failure()
+        if: failure() && github.ref == 'refs/heads/main'
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |

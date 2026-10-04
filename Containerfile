@@ -1,10 +1,13 @@
 ARG FEDORA_VERSION=latest
 FROM fedora:${FEDORA_VERSION} AS builder
 
-# Przyjmujemy dynamiczne wersje przekazane z GitHub Actions
+# Przyjmujemy dynamiczne wersje i adresy źródeł zebrane przez Cyber-Pająka (GitHub Actions)
 ARG NVIDIA_VERSION
+ARG NVIDIA_URL
 ARG LINUX_VERSION
 ARG EVDI_VERSION
+ARG EVDI_URL
+ARG LLL_URL
 WORKDIR /build
 
 # 1. Instalacja DNF5 i bazy narzędziowej
@@ -26,7 +29,7 @@ RUN dnf install -y dnf5 && \
 
 # 2. Pobieranie sterownika NVIDIA (.run)
 RUN mkdir -p /rpms/nvidia && \
-    wget https://us.download.nvidia.com/XFree86/Linux-x86_64/${NVIDIA_VERSION}/NVIDIA-Linux-x86_64-${NVIDIA_VERSION}.run -O /build/nvidia.run && \
+    wget "${NVIDIA_URL}" -O /build/nvidia.run && \
     chmod +x /build/nvidia.run
 
 # 3. Kompilacja modułów jądra NVIDIA z "Wytrychem" na Kernel 7.0+ i GCC 16
@@ -49,18 +52,18 @@ RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel 
 # 4. Kompilacja sterownika LenovoLegionLinux
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
     echo "Kompilacja LenovoLegionLinux dla jądra ${KERNEL_VERSION}..." && \
-    wget https://github.com/johnfanv2/LenovoLegionLinux/archive/refs/heads/main.tar.gz -O lenovo.tar.gz && \
-    tar -xf lenovo.tar.gz && \
-    cd LenovoLegionLinux-main/kernel_module && \
+    wget "${LLL_URL}" -O lenovo.tar.gz && \
+    mkdir lenovo && tar -xf lenovo.tar.gz --strip-components=1 -C lenovo && \
+    cd lenovo/kernel_module && \
     make -j$(nproc) -C /usr/src/kernels/${KERNEL_VERSION} M=$(pwd) modules && \
     cp *.ko /rpms/kmods/
 
 # 4b. Kompilacja modułu evdi (DisplayLink — wymagany przez Viture Beast XR)
 RUN KERNEL_VERSION=$(rpm -q --qf "%{VERSION}-%{RELEASE}.%{ARCH}\n" kernel-devel | head -n 1) && \
     echo "Kompilacja evdi v${EVDI_VERSION} dla jądra ${KERNEL_VERSION}..." && \
-    wget https://github.com/DisplayLink/evdi/archive/refs/tags/v${EVDI_VERSION}.tar.gz -O evdi.tar.gz && \
-    tar -xf evdi.tar.gz && \
-    cd evdi-${EVDI_VERSION}/module && \
+    wget "${EVDI_URL}" -O evdi.tar.gz && \
+    mkdir evdi && tar -xf evdi.tar.gz --strip-components=1 -C evdi && \
+    cd evdi/module && \
     make -j$(nproc) -C /usr/src/kernels/${KERNEL_VERSION} M=$(pwd) modules && \
     cp evdi.ko /rpms/kmods/
 
